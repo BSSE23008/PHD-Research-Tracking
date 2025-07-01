@@ -1,0 +1,122 @@
+/* SignUpPage.css */
+.container {
+  min-height: 100vh;
+  background-color: #F2F2F2;
+  padding: 2rem 1rem;
+  font-family: 'Libre Baskerville', serif;
+}
+
+.maxWidth {
+  max-width: 42rem;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #000000;
+  margin-bottom: 0.5rem;
+}
+
+.subtitle {
+  color: #666666;
+}
+
+.formContainer {
+  background-color: #EAE4D5;
+  border-radius: 0.5rem;
+  padding: 2rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.formGroup {
+  margin-bottom: 1.5rem;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: #000000;
+}
+
+.icon {
+  margin-right: 0.25rem;
+}
+
+.input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #D1D5DB;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  box-sizing: border-box;
+}
+
+.inputError {
+  border-color: #EF4444;
+}
+
+.gridTwoColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.errorText {
+  color: #EF4444;
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.sectionTitle {
+  font-size: 1.125rem;
+  font-weight: 500;
+  color: #000000;
+  margin-bottom: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #D1D5DB;
+}
+
+.button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background-color: #000000;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out;
+}
+
+.button:hover:not(:disabled) {
+  background-color: #333333;
+}
+
+.buttonDisabled {
+  background-color: #B6B09F;
+  cursor: not-allowed;
+}
+
+.signInLink {
+  text-align: center;
+  margin-top: 1.5rem;
+  color: #666666;
+}
+
+.link {
+  color: #000000;
+  font-weight: 500;
+  text-decoration: none;
+}
