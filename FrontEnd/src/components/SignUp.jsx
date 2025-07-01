@@ -3,7 +3,7 @@ import logo from '../assets/logo.png';
 import researchImage from '../assets/research.png';
 import './Signup.css';
 
-const Signup = ({ onSwitchToLogin }) => {
+const Signup = ({ onSwitchToLogin, onSignup }) => {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -30,6 +30,8 @@ const Signup = ({ onSwitchToLogin }) => {
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -39,9 +41,18 @@ const Signup = ({ onSwitchToLogin }) => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Signup attempt:', formData);
+    setLoading(true);
+    setError('');
+
+    const result = await onSignup(formData);
+    
+    if (!result.success) {
+      setError(result.message);
+    }
+    
+    setLoading(false);
   };
 
   const renderRoleSpecificFields = () => {
@@ -209,6 +220,12 @@ const Signup = ({ onSwitchToLogin }) => {
             </div>
 
             <form className="signup-form" onSubmit={handleSubmit}>
+              {error && (
+                <div className="error-message">
+                  {error}
+                </div>
+              )}
+              
               <div className="input-group">
                 <div className="form-row">
                   <input
@@ -336,8 +353,8 @@ const Signup = ({ onSwitchToLogin }) => {
                 </label>
               </div>
 
-              <button type="submit" className="submit-button">
-                Create Account
+              <button type="submit" className="submit-button" disabled={loading}>
+                {loading ? 'Creating Account...' : 'Create Account'}
               </button>
             </form>
 

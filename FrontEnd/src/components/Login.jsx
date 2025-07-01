@@ -3,7 +3,7 @@ import logo from '../assets/logo.png';
 import researchImage from '../assets/research.png';
 import './Login.css';
 
-const Login = ({ onSwitchToSignup }) => {
+const Login = ({ onSwitchToSignup, onLogin }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -11,6 +11,8 @@ const Login = ({ onSwitchToSignup }) => {
   });
 
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -20,9 +22,18 @@ const Login = ({ onSwitchToSignup }) => {
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login attempt:', formData);
+    setLoading(true);
+    setError('');
+
+    const result = await onLogin(formData);
+    
+    if (!result.success) {
+      setError(result.message);
+    }
+    
+    setLoading(false);
   };
 
   return (
@@ -60,6 +71,12 @@ const Login = ({ onSwitchToSignup }) => {
             </div>
 
             <form className="login-form" onSubmit={handleSubmit}>
+              {error && (
+                <div className="error-message">
+                  {error}
+                </div>
+              )}
+              
               <div className="input-group">
                 <input
                   type="email"
@@ -117,8 +134,8 @@ const Login = ({ onSwitchToSignup }) => {
                 <a href="#" className="forgot-link">Forgot Password?</a>
               </div>
 
-              <button type="submit" className="submit-button">
-                Sign In
+              <button type="submit" className="submit-button" disabled={loading}>
+                {loading ? 'Signing In...' : 'Sign In'}
               </button>
             </form>
 
