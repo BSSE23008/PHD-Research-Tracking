@@ -1,9 +1,13 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  min-height: 100vh;
 }
+
+.App {
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Remove other styles that interfere with login/signup pages */
 
 .logo {
   height: 6em;

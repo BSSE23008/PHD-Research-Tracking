@@ -1,14 +1,20 @@
-import React from 'react'
-import SignUp from './components/SignUp'
+import { useState } from 'react'
 import Login from './components/Login'
+import Signup from './components/Signup'
+import './App.css'
 
-function App () { 
-  return ( 
+function App() {
+  const [currentPage, setCurrentPage] = useState('login') // 'login' or 'signup'
+
+  return (
     <div className="App">
-      {/* <Login /> */}
-      <SignUp />
+      {currentPage === 'login' ? (
+        <Login onSwitchToSignup={() => setCurrentPage('signup')} />
+      ) : (
+        <Signup onSwitchToLogin={() => setCurrentPage('login')} />
+      )}
     </div>
-  ); 
+  )
 }
 
 export default App
