@@ -1,16 +1,22 @@
+// const dotenv = require('dotenv');
+require('dotenv').config();
+
+
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
+
+
 const { Pool } = require('pg');
 
 // Load environment variables
-dotenv.config();
+// dotenv.config();
+
 
 const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5174',
+  origin: process.env.CLIENT_URL || 'http://localhost:5173',
   credentials: true
 }));
 app.use(express.json());
@@ -23,6 +29,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'phd_research_tracking',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
+  
 });
 
 // Test database connection
@@ -69,7 +76,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS enabled for: ${process.env.CLIENT_URL || 'http://localhost:5174'}`);
+  console.log(`🌐 CORS enabled for: ${process.env.CLIENT_URL || 'http://localhost:5173'}`);
 });
 
 module.exports = app; 

@@ -85,12 +85,18 @@ function App() {
   // Handle signup
   const handleSignup = async (formData) => {
     try {
+      // Convert boolean agreeToTerms to string for backend validation
+      const signupData = {
+        ...formData,
+        agreeToTerms: formData.agreeToTerms.toString()
+      };
+
       const response = await fetch('http://localhost:5000/api/auth/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(signupData)
       })
 
       const data = await response.json()

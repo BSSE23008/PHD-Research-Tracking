@@ -100,7 +100,7 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
               <input
                 type="email"
                 name="advisorEmail"
-                placeholder="Advisor Email (Optional)"
+                placeholder="Advisor Email"
                 value={formData.advisorEmail}
                 onChange={handleInputChange}
                 className="form-input"
