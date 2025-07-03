@@ -1,144 +1,128 @@
 import { useState, useEffect } from 'react';
+// Import icons from the react-icons library
+import {
+  FiHome, FiUser, FiLogOut, FiSettings, FiHelpCircle, FiBookOpen,
+  FiBriefcase, FiGrid, FiBarChart2, FiCheckCircle, FiChevronDown, FiBell
+} from 'react-icons/fi';
 import './Dashboard.css';
 
 const Dashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState(null);
 
+  // This effect simulates fetching data when the component mounts
   useEffect(() => {
-    // Simulate loading
     const timer = setTimeout(() => {
-      setUserProfile(user);
       setLoading(false);
-    }, 1000);
-
+    }, 1500); // Increased time to better see the loading animation
     return () => clearTimeout(timer);
-  }, [user]);
+  }, []);
 
-  const handleLogout = () => {
-    // Clear any stored tokens
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-    onLogout();
-  };
-
+  // A simple loading screen
   if (loading) {
     return (
-      <div className="dashboard-container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading your dashboard...</p>
-        </div>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Loading Dashboard...</p>
       </div>
     );
   }
 
+  // Helper to render the role-specific card
+  const renderRoleDashboard = () => {
+    const roleFeatures = {
+      student: [
+        "Track Research Progress", "Manage Tasks & Deadlines",
+        "Generate Progress Reports", "Communicate with Supervisor"
+      ],
+      supervisor: [
+        "View All Students", "Monitor Progress",
+        "Review Submissions", "Schedule Meetings"
+      ],
+      admin: [
+        "Manage Users & Roles", "View System Analytics",
+        "Configure Settings", "Oversee Security"
+      ]
+    };
+
+    const roleInfo = {
+      student: { title: "Student Dashboard", icon: <FiBookOpen className="card-icon" /> },
+      supervisor: { title: "Supervisor Dashboard", icon: <FiBriefcase className="card-icon" /> },
+      admin: { title: "Admin Dashboard", icon: <FiGrid className="card-icon" /> }
+    };
+
+    const currentRole = user?.role || 'student';
+    const { title, icon } = roleInfo[currentRole];
+    const features = roleFeatures[currentRole];
+
+    return (
+      <div className="card role-card">
+        <div className="card-header">
+          {icon}
+          <h3>{title}</h3>
+        </div>
+        <p>Here are your primary functions based on your role.</p>
+        <ul className="feature-list">
+          {features.map(feature => (
+            <li key={feature}><FiCheckCircle className="check-icon" /> {feature}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
+
   return (
     <div className="dashboard-container">
-      <div className="dashboard-wrapper">
-        {/* Header */}
-        <header className="dashboard-header">
-          <div className="header-content">
-            <div className="header-left">
-              <h1>PhD Research Tracking</h1>
-              <p>Welcome back, {userProfile?.firstName}!</p>
+      <header className="dashboard-header">
+        <div className="header-brand">
+          <FiHome />
+          <h1>PhD Tracker</h1>
+        </div>
+        <div className="header-user-menu">
+          <button className="icon-btn">
+            <FiBell />
+          </button>
+          <div className="user-profile">
+            <img src={`https://i.pravatar.cc/40?u=${user.id}`} alt="User Avatar" className="avatar" />
+            <div className="user-details">
+              <span className="user-name">{user?.firstName} {user?.lastName}</span>
+              <span className="user-role">{user?.role}</span>
             </div>
-            <div className="header-right">
-              <div className="user-info">
-                <span className="user-name">
-                  {userProfile?.firstName} {userProfile?.lastName}
-                </span>
-                <span className="user-role">{userProfile?.role?.toUpperCase()}</span>
-              </div>
-              <button onClick={handleLogout} className="logout-btn">
-                Logout
-              </button>
+            <FiChevronDown />
+          </div>
+          <button onClick={onLogout} className="btn btn-logout">
+            <FiLogOut />
+            <span>Logout</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="dashboard-main">
+        <div className="welcome-banner">
+          <h2>Welcome back, {user?.firstName}! 👋</h2>
+          <p>You have successfully logged in. Here's your overview for today.</p>
+        </div>
+
+        <div className="dashboard-grid">
+          {/* Role-specific dashboard card */}
+          {renderRoleDashboard()}
+
+          {/* Quick Actions Card */}
+          <div className="card quick-actions-card">
+            <div className="card-header">
+              <FiBarChart2 className="card-icon" />
+              <h3>Quick Actions</h3>
             </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="dashboard-main">
-          <div className="welcome-section">
-            <div className="welcome-card">
-              <h2>🎉 Login Successful!</h2>
-              <p>You have successfully logged into the PhD Research Tracking System.</p>
-              
-              <div className="user-details">
-                <h3>Your Profile Information:</h3>
-                <div className="detail-grid">
-                  <div className="detail-item">
-                    <strong>Name:</strong> {userProfile?.firstName} {userProfile?.lastName}
-                  </div>
-                  <div className="detail-item">
-                    <strong>Email:</strong> {userProfile?.email}
-                  </div>
-                  <div className="detail-item">
-                    <strong>Role:</strong> {userProfile?.role}
-                  </div>
-                  <div className="detail-item">
-                    <strong>User ID:</strong> {userProfile?.id}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Role-specific sections */}
-          <div className="dashboard-sections">
-            {userProfile?.role === 'student' && (
-              <div className="section-card">
-                <h3>📚 Student Dashboard</h3>
-                <p>Track your PhD research progress, manage tasks, and communicate with your supervisor.</p>
-                <div className="feature-list">
-                  <div className="feature-item">✅ Research Progress Tracking</div>
-                  <div className="feature-item">📋 Task Management</div>
-                  <div className="feature-item">📊 Progress Reports</div>
-                  <div className="feature-item">💬 Supervisor Communication</div>
-                </div>
-              </div>
-            )}
-
-            {userProfile?.role === 'supervisor' && (
-              <div className="section-card">
-                <h3>👨‍🏫 Supervisor Dashboard</h3>
-                <p>Monitor your students' progress and manage research supervision activities.</p>
-                <div className="feature-list">
-                  <div className="feature-item">👥 Student Overview</div>
-                  <div className="feature-item">📈 Progress Monitoring</div>
-                  <div className="feature-item">📝 Review Tasks</div>
-                  <div className="feature-item">📅 Meeting Scheduling</div>
-                </div>
-              </div>
-            )}
-
-            {userProfile?.role === 'admin' && (
-              <div className="section-card">
-                <h3>⚙️ Admin Dashboard</h3>
-                <p>Manage users, system settings, and overall platform administration.</p>
-                <div className="feature-list">
-                  <div className="feature-item">👥 User Management</div>
-                  <div className="feature-item">📊 System Analytics</div>
-                  <div className="feature-item">⚙️ Settings Control</div>
-                  <div className="feature-item">🔒 Security Management</div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Actions */}
-          <div className="quick-actions">
-            <h3>Quick Actions</h3>
+            <p>Access your most used features in one click.</p>
             <div className="action-buttons">
-              <button className="action-btn primary">View Profile</button>
-              <button className="action-btn secondary">Update Settings</button>
-              <button className="action-btn secondary">Help & Support</button>
+              <button className="btn btn-primary"><FiUser /> View Profile</button>
+              <button className="btn btn-secondary"><FiSettings /> Account Settings</button>
+              <button className="btn btn-secondary"><FiHelpCircle /> Help & Support</button>
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

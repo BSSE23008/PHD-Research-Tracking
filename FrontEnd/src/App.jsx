@@ -5,7 +5,7 @@ import Dashboard from './components/Dashboard'
 import './App.css'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('login') // 'login', 'signup', 'dashboard'
+  const [currentPage, setCurrentPage] = useState('dashboard') // 'login', 'signup', 'dashboard'
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -161,13 +161,26 @@ function App() {
     />
   )
 
+
+   // Mock user data to pass to the Dashboard for styling purposes.
+  // You can change 'role' to 'supervisor' or 'admin' to see different views.
+  const mockUser = {
+    id: 'user_12345',
+    firstName: 'Jane',
+    lastName: 'Doe',
+    email: 'jane.doe@university.edu',
+    role: 'student' // <-- Change to 'supervisor' or 'admin' to test other views
+  };
+
+  
+
   return (
     <div className="App">
       {currentPage === 'login' && <EnhancedLogin />}
       {currentPage === 'signup' && <EnhancedSignup />}
       {currentPage === 'dashboard' && (
         <Dashboard 
-          user={user} 
+          user={mockUser} 
           onLogout={handleLogout}
         />
       )}
