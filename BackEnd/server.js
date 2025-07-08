@@ -22,7 +22,12 @@ connectDB();
 app.locals.db = pool;
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
+const authRoutes = require('./routes/auth');
+const formsRoutes = require('./routes/forms');
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/forms', formsRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

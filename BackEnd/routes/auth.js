@@ -183,6 +183,33 @@ router.get('/profile', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/auth/profile/extended
+// @desc    Get extended user profile with all fields
+// @access  Private
+router.get('/profile/extended', authenticateToken, async (req, res) => {
+  try {
+    const userModel = getUserModel(req);
+    const user = await userModel.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ 
+        message: 'User not found' 
+      });
+    }
+
+    res.json({
+      message: 'Extended profile retrieved successfully',
+      user: user
+    });
+
+  } catch (error) {
+    console.error('Extended profile fetch error:', error);
+    res.status(500).json({ 
+      message: 'Server error while fetching extended profile'
+    });
+  }
+});
+
 // @route   PUT /api/auth/profile
 // @desc    Update user profile
 // @access  Private
