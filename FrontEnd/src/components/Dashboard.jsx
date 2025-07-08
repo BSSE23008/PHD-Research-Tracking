@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { PHDEE02AForm } from './forms/PHDEE02-A';
 import './Dashboard.css';
 
 const Dashboard = ({ user, onLogout }) => {
   const [loading, setLoading] = useState(true);
   const [userProfile, setUserProfile] = useState(null);
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard', 'forms', 'phdee02a'
 
   useEffect(() => {
     // Simulate loading
@@ -22,12 +24,66 @@ const Dashboard = ({ user, onLogout }) => {
     onLogout();
   };
 
+  const handleFormSubmissionComplete = (submissionData) => {
+    console.log('Form submitted successfully:', submissionData);
+    // You can add a success message or redirect here
+    setCurrentView('dashboard');
+    // Optional: Show success notification
+    alert('Form submitted successfully!');
+  };
+
   if (loading) {
     return (
       <div className="dashboard-container">
         <div className="loading-spinner">
           <div className="spinner"></div>
           <p>Loading your dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render the form view
+  if (currentView === 'phdee02a') {
+    return (
+      <div className="dashboard-container">
+        <div className="dashboard-wrapper">
+          {/* Header */}
+          <header className="dashboard-header">
+            <div className="header-content">
+              <div className="header-left">
+                <h1>PhD Research Tracking</h1>
+                <p>PHDEE02-A Form</p>
+              </div>
+              <div className="header-right">
+                <div className="user-info">
+                  <span className="user-name">
+                    {userProfile?.firstName} {userProfile?.lastName}
+                  </span>
+                  <span className="user-role">{userProfile?.role?.toUpperCase()}</span>
+                </div>
+                <button 
+                  onClick={() => setCurrentView('dashboard')} 
+                  className="logout-btn"
+                  style={{ marginRight: '1rem' }}
+                >
+                  Back to Dashboard
+                </button>
+                <button onClick={handleLogout} className="logout-btn">
+                  Logout
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Form Content */}
+          <main className="dashboard-main">
+            <PHDEE02AForm 
+              user={userProfile}
+              onClose={() => setCurrentView('dashboard')}
+              onSubmissionComplete={handleFormSubmissionComplete}
+            />
+          </main>
         </div>
       </div>
     );
@@ -79,6 +135,29 @@ const Dashboard = ({ user, onLogout }) => {
                   <div className="detail-item">
                     <strong>User ID:</strong> {userProfile?.id}
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Forms Section */}
+          <div className="dashboard-sections">
+            <div className="section-card">
+              <h3>📋 Research Forms</h3>
+              <p>Access and complete your research tracking forms with auto-filled data from your profile.</p>
+              <div className="feature-list">
+                <div className="feature-item">
+                  <strong>PHDEE02-A Form</strong>
+                  <p style={{ margin: '0.5rem 0 1rem 0', fontSize: '0.9rem', color: '#6c757d' }}>
+                    Research project registration and tracking form
+                  </p>
+                  <button 
+                    onClick={() => setCurrentView('phdee02a')}
+                    className="action-btn primary"
+                    style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                  >
+                    Open Form
+                  </button>
                 </div>
               </div>
             </div>
