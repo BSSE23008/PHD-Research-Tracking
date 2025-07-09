@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Signup from './components/Signup'
 import Dashboard from './components/Dashboard'
+import SupervisorDashboard from './components/SupervisorDashboard'
 import './App.css'
 
 function App() {
@@ -172,10 +173,17 @@ function App() {
       {currentPage === 'login' && <EnhancedLogin />}
       {currentPage === 'signup' && <EnhancedSignup />}
       {currentPage === 'dashboard' && (
+        user?.role === 'supervisor' ? (
+          <SupervisorDashboard 
+            user={user} 
+            onLogout={handleLogout}
+          />
+        ) : (
         <Dashboard 
           user={user} 
           onLogout={handleLogout}
         />
+        )
       )}
     </div>
   )
