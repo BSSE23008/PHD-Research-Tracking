@@ -527,4 +527,88 @@ router.get('/supervisor/stats', authenticateToken, async (req, res) => {
   }
 });
 
+// @route   GET /api/forms/supervisor/timeline
+// @desc    Get timeline of all form activities for supervisor
+// @access  Private (Supervisor only)
+router.get('/supervisor/timeline', authenticateToken, async (req, res) => {
+  try {
+    const supervisorEmail = req.user.email;
+    const supervisorId = req.user.id;
+
+    // Check if user is a supervisor
+    if (req.user.role !== 'supervisor') {
+      return res.status(403).json({ 
+        message: 'Access denied. Supervisor role required.' 
+      });
+    }
+
+    // Get timeline data - both form submissions and consent form activities
+    const timelineQuery = `
+      SELECT 
+        fs.id,
+        fs.submitted_at as timestamp,
+        'form_submitted' as type,
+        u.first_name || ' ' || u.last_name as student_name,
+        u.email as student_email,
+        COALESCE(
+          fs.form_data->>'projectTitle',
+          fs.form_data->'project'->>'title',
+          fs.form_data->'projectDetails'->>'title',
+          'Untitled Project'
+        ) as project_title,
+        fs.supervisor_approval_status as status,
+        'Student submitted PHDEE02-A form for research approval' as description
+      FROM form_submissions fs
+      JOIN users u ON fs.user_id = u.id
+      WHERE (
+        fs.form_data->>'supervisorEmail' = $1 
+        OR fs.form_data->'supervisorDetails'->>'email' = $1
+        OR fs.form_data->'supervisor'->>'email' = $1
+        OR fs.supervisor_approved_by = $2
+      )
+      
+      UNION ALL
+      
+      SELECT 
+        scf.id,
+        scf.filled_at as timestamp,
+        CASE 
+          WHEN scf.status = 'approved' THEN 'form_approved'
+          WHEN scf.status = 'rejected' THEN 'form_rejected'
+          ELSE 'form_consent'
+        END as type,
+        u.first_name || ' ' || u.last_name as student_name,
+        u.email as student_email,
+        scf.area_of_research as project_title,
+        scf.status,
+        CASE 
+          WHEN scf.status = 'approved' THEN 'Supervisor consent form completed and approved'
+          WHEN scf.status = 'rejected' THEN 'Supervisor consent form rejected - additional information required'
+          ELSE 'Supervisor consent form completed'
+        END as description
+      FROM supervisor_consent_forms scf
+      JOIN form_submissions fs ON scf.form_submission_id = fs.id
+      JOIN users u ON fs.user_id = u.id
+      WHERE scf.supervisor_id = $2
+      
+      ORDER BY timestamp DESC
+      LIMIT 50
+    `;
+
+    const result = await req.app.locals.db.query(timelineQuery, [supervisorEmail, supervisorId]);
+
+    res.json({
+      message: 'Timeline data retrieved successfully',
+      data: result.rows
+    });
+
+  } catch (error) {
+    console.error('Get supervisor timeline error:', error);
+    res.status(500).json({ 
+      message: 'Server error while retrieving timeline data',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+});
+
 module.exports = router;

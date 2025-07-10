@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { SupervisorConsentForm } from './forms/SupervisorConsentForm';
-import { Users, Clock, CheckCircle, AlertCircle, BookOpen, Calendar, TrendingUp, FileText, GraduationCap } from 'lucide-react';
+import { FormPreview } from './forms/FormPreview';
+import { Timeline } from './Timeline';
+import { 
+  Users, Clock, CheckCircle, AlertCircle, BookOpen, Calendar, 
+  TrendingUp, FileText, GraduationCap, Eye, Download, Printer,
+  BarChart3, Settings, Bell, Search, Filter, RefreshCw
+} from 'lucide-react';
 import './Dashboard.css';
 import './SupervisorDashboard.css';
 
@@ -11,11 +17,15 @@ const SupervisorDashboard = ({ user, onLogout }) => {
   const [pendingForms, setPendingForms] = useState([]);
   const [selectedFormSubmission, setSelectedFormSubmission] = useState(null);
   const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [showNotifications, setShowNotifications] = useState(false);
   const [stats, setStats] = useState({
     totalStudents: 0,
     pendingApprovals: 0,
     approvedForms: 0,
-    totalSubmissions: 0
+    totalSubmissions: 0,
+    recentActivity: 0
   });
 
   useEffect(() => {
@@ -143,14 +153,38 @@ const SupervisorDashboard = ({ user, onLogout }) => {
     setCurrentView('consent-form');
   };
 
-  const showNotification = (message) => {
-    // Simple notification for now - could be enhanced with a proper notification system
-    alert(message);
+  const handlePreviewForm = (formSubmission) => {
+    setSelectedFormSubmission(formSubmission);
+    setCurrentView('form-preview');
+  };
+
+  const showNotification = (message, type = 'info') => {
+    // Enhanced notification system
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+      <div class="notification-content">
+        <span>${message}</span>
+        <button onclick="this.parentElement.parentElement.remove()">×</button>
+      </div>
+    `;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+      notification.remove();
+    }, 5000);
   };
 
   const getInitials = (firstName, lastName) => {
     return `${(firstName || '').charAt(0)}${(lastName || '').charAt(0)}`.toUpperCase();
   };
+
+  const filteredForms = pendingForms.filter(form => {
+    const matchesSearch = form.student_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         form.project_title?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = filterStatus === 'all' || form.status === filterStatus;
+    return matchesSearch && matchesFilter;
+  });
 
   if (loading) {
     return (
@@ -182,6 +216,7 @@ const SupervisorDashboard = ({ user, onLogout }) => {
             onClick={() => window.location.reload()} 
             className="modern-btn modern-btn-primary"
           >
+            <RefreshCw size={16} />
             Refresh Page
           </button>
         </div>
@@ -193,7 +228,7 @@ const SupervisorDashboard = ({ user, onLogout }) => {
   if (currentView === 'consent-form' && selectedFormSubmission) {
     return (
       <div className="supervisor-dashboard">
-        <div className="supervisor-header">
+        <div className="supervisor-header modern-header">
           <div className="supervisor-header-content">
             <div className="supervisor-welcome">
               <div className="supervisor-avatar">
@@ -230,11 +265,89 @@ const SupervisorDashboard = ({ user, onLogout }) => {
     );
   }
 
+  // Render form preview view
+  if (currentView === 'form-preview' && selectedFormSubmission) {
+    return (
+      <div className="supervisor-dashboard">
+        <div className="supervisor-header modern-header">
+          <div className="supervisor-header-content">
+            <div className="supervisor-welcome">
+              <div className="supervisor-avatar">
+                {getInitials(userProfile?.first_name, userProfile?.last_name)}
+              </div>
+              <div className="supervisor-info">
+                <h1>Form Preview</h1>
+                <p>Preview for {selectedFormSubmission.student_name}</p>
+              </div>
+            </div>
+            <div className="supervisor-actions">
+              <button 
+                onClick={() => setCurrentView('dashboard')} 
+                className="modern-btn modern-btn-secondary"
+              >
+                ← Back to Dashboard
+              </button>
+              <button onClick={handleLogout} className="modern-btn modern-btn-primary">
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="supervisor-main">
+          <FormPreview 
+            formSubmission={selectedFormSubmission}
+            onClose={() => setCurrentView('dashboard')}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Render timeline view
+  if (currentView === 'timeline') {
+    return (
+      <div className="supervisor-dashboard">
+        <div className="supervisor-header modern-header">
+          <div className="supervisor-header-content">
+            <div className="supervisor-welcome">
+              <div className="supervisor-avatar">
+                {getInitials(userProfile?.first_name, userProfile?.last_name)}
+              </div>
+              <div className="supervisor-info">
+                <h1>Timeline & Activity</h1>
+                <p>Track form submissions and approvals</p>
+              </div>
+            </div>
+            <div className="supervisor-actions">
+              <button 
+                onClick={() => setCurrentView('dashboard')} 
+                className="modern-btn modern-btn-secondary"
+              >
+                ← Back to Dashboard
+              </button>
+              <button onClick={handleLogout} className="modern-btn modern-btn-primary">
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="supervisor-main">
+          <Timeline 
+            userEmail={userProfile?.email}
+            onClose={() => setCurrentView('dashboard')}
+          />
+        </div>
+      </div>
+    );
+  }
+
   // Main supervisor dashboard
   return (
     <div className="supervisor-dashboard">
-      {/* Modern Header */}
-      <div className="supervisor-header">
+      {/* Modern Header with Navigation */}
+      <div className="supervisor-header modern-header">
         <div className="supervisor-header-content">
           <div className="supervisor-welcome">
             <div className="supervisor-avatar">
@@ -246,6 +359,24 @@ const SupervisorDashboard = ({ user, onLogout }) => {
             </div>
           </div>
           <div className="supervisor-actions">
+            <div className="notification-wrapper">
+              <button 
+                className="modern-btn modern-btn-icon" 
+                onClick={() => setShowNotifications(!showNotifications)}
+              >
+                <Bell size={20} />
+                {stats.pendingApprovals > 0 && (
+                  <span className="notification-badge">{stats.pendingApprovals}</span>
+                )}
+              </button>
+            </div>
+            <button 
+              onClick={() => setCurrentView('timeline')} 
+              className="modern-btn modern-btn-secondary"
+            >
+              <Calendar size={16} />
+              Timeline
+            </button>
             <button onClick={handleLogout} className="modern-btn modern-btn-primary">
               Logout
             </button>
@@ -255,131 +386,210 @@ const SupervisorDashboard = ({ user, onLogout }) => {
 
       {/* Main Content */}
       <div className="supervisor-main">
-        {/* Stats Grid */}
-        <div className="stats-grid">
-          <div className="stat-card">
+        {/* Enhanced Stats Grid */}
+        <div className="stats-grid enhanced-stats">
+          <div className="stat-card urgent-stat">
             <div className="stat-header">
               <div>
                 <h3 className="stat-number">{stats.pendingApprovals}</h3>
                 <p className="stat-label">Pending Approvals</p>
               </div>
-              <div className="stat-icon">
+              <div className="stat-icon urgent-icon">
                 <Clock size={24} />
               </div>
             </div>
-            <div className="stat-trend">
-              <TrendingUp size={16} />
-              <span>Requires attention</span>
+            <div className="stat-trend urgent-trend">
+              <AlertCircle size={16} />
+              <span>Requires immediate attention</span>
             </div>
           </div>
 
-          <div className="stat-card">
+          <div className="stat-card success-stat">
             <div className="stat-header">
               <div>
                 <h3 className="stat-number">{stats.approvedForms}</h3>
                 <p className="stat-label">Approved Forms</p>
               </div>
-              <div className="stat-icon">
+              <div className="stat-icon success-icon">
                 <CheckCircle size={24} />
               </div>
             </div>
-            <div className="stat-trend">
+            <div className="stat-trend success-trend">
               <TrendingUp size={16} />
               <span>This month</span>
             </div>
           </div>
 
-          <div className="stat-card">
+          <div className="stat-card info-stat">
             <div className="stat-header">
               <div>
                 <h3 className="stat-number">{stats.totalStudents}</h3>
                 <p className="stat-label">Active Students</p>
               </div>
-              <div className="stat-icon">
+              <div className="stat-icon info-icon">
                 <Users size={24} />
               </div>
             </div>
-            <div className="stat-trend">
-              <TrendingUp size={16} />
+            <div className="stat-trend info-trend">
+              <GraduationCap size={16} />
               <span>Under supervision</span>
             </div>
           </div>
 
-          <div className="stat-card">
+          <div className="stat-card neutral-stat">
             <div className="stat-header">
               <div>
                 <h3 className="stat-number">{stats.totalSubmissions}</h3>
                 <p className="stat-label">Total Submissions</p>
               </div>
-              <div className="stat-icon">
+              <div className="stat-icon neutral-icon">
                 <FileText size={24} />
               </div>
             </div>
-            <div className="stat-trend">
-              <TrendingUp size={16} />
+            <div className="stat-trend neutral-trend">
+              <BarChart3 size={16} />
               <span>All time</span>
             </div>
           </div>
         </div>
 
-        {/* Pending Approvals Section */}
-        <div className="section-card">
-          <div className="section-header">
-            <h2 className="section-title">
-              <AlertCircle size={24} />
-              Student Forms Awaiting Your Approval
-            </h2>
-            <p className="section-subtitle">
-              Review and approve student research proposals that require your consent
-            </p>
+        {/* Enhanced Pending Approvals Section */}
+        <div className="section-card enhanced-section">
+          <div className="section-header enhanced-header">
+            <div className="section-title-group">
+              <h2 className="section-title">
+                <AlertCircle size={24} />
+                Student Forms Awaiting Your Approval
+              </h2>
+              <p className="section-subtitle">
+                Review and approve student research proposals that require your consent
+              </p>
+            </div>
+            
+            {/* Search and Filter Controls */}
+            <div className="section-controls">
+              <div className="search-wrapper">
+                <Search size={16} />
+                <input
+                  type="text"
+                  placeholder="Search students or projects..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                />
+              </div>
+              <div className="filter-wrapper">
+                <Filter size={16} />
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="filter-select"
+                >
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </div>
+              <button 
+                onClick={() => {
+                  loadPendingForms();
+                  loadStats();
+                }}
+                className="refresh-btn"
+                title="Refresh data"
+              >
+                <RefreshCw size={16} />
+              </button>
+            </div>
           </div>
           
           <div className="section-content">
-            {pendingForms.length === 0 ? (
-              <div className="empty-state">
+            {filteredForms.length === 0 ? (
+              <div className="empty-state enhanced-empty">
                 <div className="empty-state-icon">
-                  <CheckCircle size={32} />
+                  {searchTerm || filterStatus !== 'all' ? <Search size={48} /> : <CheckCircle size={48} />}
                 </div>
-                <h3>All caught up!</h3>
-                <p>No student forms are currently awaiting your approval.<br />
-                   New submissions will appear here when students submit their research proposals.</p>
+                <h3>{searchTerm || filterStatus !== 'all' ? 'No results found' : 'All caught up!'}</h3>
+                <p>
+                  {searchTerm || filterStatus !== 'all' 
+                    ? 'Try adjusting your search or filter criteria.'
+                    : 'No student forms are currently awaiting your approval. New submissions will appear here when students submit their research proposals.'
+                  }
+                </p>
+                {(searchTerm || filterStatus !== 'all') && (
+                  <button 
+                    onClick={() => {
+                      setSearchTerm('');
+                      setFilterStatus('all');
+                    }}
+                    className="modern-btn modern-btn-secondary"
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
             ) : (
-              <div className="forms-grid">
-                {pendingForms.map((formSubmission) => (
-                  <div key={formSubmission.id} className="form-card">
+              <div className="forms-grid enhanced-forms">
+                {filteredForms.map((formSubmission) => (
+                  <div key={formSubmission.id} className="form-card enhanced-card">
                     <div className="form-card-header">
-                      <h4 className="form-card-title">PHDEE02-A Form</h4>
+                      <div className="form-card-title-group">
+                        <h4 className="form-card-title">PHDEE02-A Form</h4>
+                        <span className="form-id">#{formSubmission.id}</span>
+                      </div>
                       <span className="form-status pending">
+                        <Clock size={12} />
                         Awaiting Consent
                       </span>
                     </div>
                     
                     <div className="form-card-content">
-                      <div className="form-detail">
-                        <span className="form-detail-label">Student:</span>
-                        <span className="form-detail-value">{formSubmission.student_name}</span>
+                      <div className="student-info">
+                        <div className="student-avatar">
+                          {formSubmission.student_name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                        </div>
+                        <div className="student-details">
+                          <h5 className="student-name">{formSubmission.student_name}</h5>
+                          <p className="student-email">{formSubmission.student_email}</p>
+                        </div>
                       </div>
-                      <div className="form-detail">
-                        <span className="form-detail-label">Email:</span>
-                        <span className="form-detail-value">{formSubmission.student_email}</span>
-                      </div>
-                      <div className="form-detail">
-                        <span className="form-detail-label">Project:</span>
-                        <span className="form-detail-value">{formSubmission.project_title}</span>
-                      </div>
-                      <div className="form-detail">
-                        <span className="form-detail-label">Submitted:</span>
-                        <span className="form-detail-value">
-                          {new Date(formSubmission.submitted_at).toLocaleDateString()}
-                        </span>
+                      
+                      <div className="form-details">
+                        <div className="form-detail">
+                          <span className="form-detail-label">Project:</span>
+                          <span className="form-detail-value" title={formSubmission.project_title}>
+                            {formSubmission.project_title || 'No title provided'}
+                          </span>
+                        </div>
+                        <div className="form-detail">
+                          <span className="form-detail-label">Submitted:</span>
+                          <span className="form-detail-value">
+                            {new Date(formSubmission.submitted_at).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
                       </div>
                     </div>
                     
-                    <div className="form-card-actions">
+                    <div className="form-card-actions enhanced-actions">
+                      <button 
+                        onClick={() => handlePreviewForm(formSubmission)}
+                        className="form-action-btn secondary"
+                        title="Preview form details"
+                      >
+                        <Eye size={16} />
+                        Preview
+                      </button>
                       <button 
                         onClick={() => handleFillConsentForm(formSubmission)}
                         className="form-action-btn primary"
+                        title="Fill consent form"
                       >
                         <FileText size={16} />
                         Fill Consent Form
@@ -392,13 +602,21 @@ const SupervisorDashboard = ({ user, onLogout }) => {
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="quick-actions">
+        {/* Enhanced Quick Actions */}
+        <div className="quick-actions enhanced-actions">
           <h3>Quick Actions</h3>
           <div className="quick-actions-grid">
+            <div className="quick-action-item" onClick={() => setCurrentView('timeline')}>
+              <div className="quick-action-icon">
+                <Calendar size={24} />
+              </div>
+              <h4 className="quick-action-title">View Timeline</h4>
+              <p className="quick-action-desc">Track all form activities</p>
+            </div>
+            
             <div className="quick-action-item" onClick={() => window.location.reload()}>
               <div className="quick-action-icon">
-                <Clock size={24} />
+                <RefreshCw size={24} />
               </div>
               <h4 className="quick-action-title">Refresh Dashboard</h4>
               <p className="quick-action-desc">Check for new submissions</p>
@@ -414,18 +632,10 @@ const SupervisorDashboard = ({ user, onLogout }) => {
             
             <div className="quick-action-item">
               <div className="quick-action-icon">
-                <BookOpen size={24} />
+                <BarChart3 size={24} />
               </div>
-              <h4 className="quick-action-title">Research Reports</h4>
-              <p className="quick-action-desc">Generate supervision reports</p>
-            </div>
-            
-            <div className="quick-action-item">
-              <div className="quick-action-icon">
-                <Calendar size={24} />
-              </div>
-              <h4 className="quick-action-title">Schedule Meetings</h4>
-              <p className="quick-action-desc">Plan student consultations</p>
+              <h4 className="quick-action-title">Analytics</h4>
+              <p className="quick-action-desc">View supervision reports</p>
             </div>
           </div>
         </div>
