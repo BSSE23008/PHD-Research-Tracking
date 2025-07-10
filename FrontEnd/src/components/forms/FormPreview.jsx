@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
-import { Download, Printer, Eye, X, FileText, User, Calendar, Building } from 'lucide-react';
-import './FormPreview.css';
+import { Download, Printer, Eye, X, FileText, User, Calendar, Building, Mail, GraduationCap, Clock, MapPin } from 'lucide-react';
 
 export const FormPreview = ({ formSubmission, onClose }) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   if (!formSubmission) {
     return (
-      <div className="form-preview-container">
-        <div className="form-preview-error">
-          <FileText size={48} />
-          <h3>No Form Data</h3>
-          <p>No form submission data available to preview.</p>
-          <button onClick={onClose} className="modern-btn modern-btn-primary">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center max-w-md">
+          <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No Form Data</h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">No form submission data available to preview.</p>
+          <button 
+            onClick={onClose} 
+            className="bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 transition-colors"
+          >
             Close
           </button>
         </div>
@@ -31,31 +33,9 @@ export const FormPreview = ({ formSubmission, onClose }) => {
   const handleDownloadPDF = async () => {
     setIsGeneratingPDF(true);
     try {
-      // Use browser's print-to-PDF functionality
-      // In a real implementation, you might want to use a library like jsPDF or html2pdf
+      // Create a new window for printing/PDF generation
       const printWindow = window.open('', '_blank');
-      printWindow.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>PHDEE02-A Form - ${formSubmission.student_name}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
-            .section { margin-bottom: 25px; }
-            .section-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
-            .field { margin-bottom: 10px; }
-            .field-label { font-weight: bold; color: #555; }
-            .field-value { margin-left: 10px; }
-            .signature-section { margin-top: 40px; display: flex; justify-content: space-between; }
-            .signature-box { width: 200px; border-top: 1px solid #333; text-align: center; padding-top: 5px; }
-          </style>
-        </head>
-        <body>
-          ${generatePrintableHTML(formSubmission, formData)}
-        </body>
-        </html>
-      `);
+      printWindow.document.write(generatePrintableHTML(formSubmission, formData));
       printWindow.document.close();
       printWindow.focus();
       printWindow.print();
@@ -70,341 +50,395 @@ export const FormPreview = ({ formSubmission, onClose }) => {
 
   const generatePrintableHTML = (submission, data) => {
     return `
-      <div class="header">
-        <h1>PHD RESEARCH PROJECT REGISTRATION FORM</h1>
-        <h2>PHDEE02-A</h2>
-        <p>Form ID: #${submission.id} | Submitted: ${new Date(submission.submitted_at).toLocaleDateString()}</p>
-      </div>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>PHDEE02-A Form - ${submission.student_name}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; padding: 20px; }
+          .header { text-align: center; margin-bottom: 40px; border-bottom: 3px solid #B45309; padding-bottom: 20px; }
+          .header h1 { color: #B45309; font-size: 24px; margin-bottom: 10px; }
+          .header h2 { color: #6B7280; font-size: 18px; margin-bottom: 10px; }
+          .header p { color: #6B7280; font-size: 14px; }
+          .section { margin-bottom: 30px; page-break-inside: avoid; }
+          .section-title { font-size: 18px; font-weight: bold; color: #1F2937; margin-bottom: 15px; border-bottom: 2px solid #E5E7EB; padding-bottom: 8px; }
+          .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+          .field { margin-bottom: 12px; }
+          .field-label { font-weight: 600; color: #374151; margin-bottom: 4px; display: block; }
+          .field-value { color: #6B7280; padding: 8px 12px; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 6px; }
+          .field-value.textarea { min-height: 80px; white-space: pre-wrap; }
+          .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+          .status-pending { background: #FEF3C7; color: #D97706; }
+          .status-approved { background: #D1FAE5; color: #059669; }
+          .status-rejected { background: #FEE2E2; color: #DC2626; }
+          .signature-section { margin-top: 50px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+          .signature-box { text-align: center; }
+          .signature-line { border-top: 2px solid #1F2937; margin-bottom: 8px; height: 50px; }
+          .signature-label { font-weight: 600; color: #374151; }
+          .date-line { margin-top: 15px; color: #6B7280; }
+          @media print { body { padding: 10px; } .no-print { display: none !important; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>PhD RESEARCH PROJECT REGISTRATION FORM</h1>
+          <h2>PHDEE02-A</h2>
+          <p>Form ID: #${submission.id} | Submitted: ${new Date(submission.submitted_at).toLocaleDateString('en-US', { 
+            year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+          })}</p>
+          <span class="status-badge status-${submission.status}">${submission.status}</span>
+        </div>
 
-      <div class="section">
-        <div class="section-title">Student Information</div>
-        <div class="field">
-          <span class="field-label">Full Name:</span>
-          <span class="field-value">${data.studentName || 'N/A'}</span>
+        <div class="section">
+          <div class="section-title">Student Information</div>
+          <div class="field-grid">
+            <div class="field">
+              <span class="field-label">Full Name</span>
+              <div class="field-value">${data.studentName || submission.student_name || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Student ID</span>
+              <div class="field-value">${data.studentId || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Email Address</span>
+              <div class="field-value">${data.studentEmail || submission.student_email || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Program</span>
+              <div class="field-value">${data.program || 'PhD'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Academic Year</span>
+              <div class="field-value">${data.year || new Date().getFullYear()}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Department</span>
+              <div class="field-value">${data.department || 'Computer Science'}</div>
+            </div>
+          </div>
         </div>
-        <div class="field">
-          <span class="field-label">Student ID:</span>
-          <span class="field-value">${data.studentId || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Email:</span>
-          <span class="field-value">${data.studentEmail || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Program:</span>
-          <span class="field-value">${data.program || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Academic Year:</span>
-          <span class="field-value">${data.year || 'N/A'}</span>
-        </div>
-      </div>
 
-      <div class="section">
-        <div class="section-title">Supervisor Information</div>
-        <div class="field">
-          <span class="field-label">Supervisor Name:</span>
-          <span class="field-value">${data.supervisorName || 'N/A'}</span>
+        <div class="section">
+          <div class="section-title">Supervisor Information</div>
+          <div class="field-grid">
+            <div class="field">
+              <span class="field-label">Supervisor Name</span>
+              <div class="field-value">${data.supervisorName || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Supervisor Email</span>
+              <div class="field-value">${data.supervisorEmail || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Title/Position</span>
+              <div class="field-value">${data.supervisorTitle || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Department</span>
+              <div class="field-value">${data.supervisorDepartment || 'N/A'}</div>
+            </div>
+          </div>
         </div>
-        <div class="field">
-          <span class="field-label">Supervisor Email:</span>
-          <span class="field-value">${data.supervisorEmail || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Title:</span>
-          <span class="field-value">${data.supervisorTitle || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Department:</span>
-          <span class="field-value">${data.supervisorDepartment || 'N/A'}</span>
-        </div>
-      </div>
 
-      <div class="section">
-        <div class="section-title">Project Details</div>
-        <div class="field">
-          <span class="field-label">Project Title:</span>
-          <span class="field-value">${data.projectTitle || 'N/A'}</span>
+        <div class="section">
+          <div class="section-title">Project Details</div>
+          <div class="field">
+            <span class="field-label">Project Title</span>
+            <div class="field-value">${data.projectTitle || submission.project_title || 'N/A'}</div>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <span class="field-label">Project Type</span>
+              <div class="field-value">${data.projectType || 'Research'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Estimated Duration</span>
+              <div class="field-value">${data.estimatedHours || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Start Date</span>
+              <div class="field-value">${data.startDate || 'N/A'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Expected Completion</span>
+              <div class="field-value">${data.endDate || 'N/A'}</div>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Project Description & Objectives</span>
+            <div class="field-value textarea">${data.projectDescription || 'N/A'}</div>
+          </div>
+          <div class="field">
+            <span class="field-label">Research Methodology</span>
+            <div class="field-value textarea">${data.methodology || 'N/A'}</div>
+          </div>
         </div>
-        <div class="field">
-          <span class="field-label">Project Type:</span>
-          <span class="field-value">${data.projectType || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Estimated Hours:</span>
-          <span class="field-value">${data.estimatedHours || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Start Date:</span>
-          <span class="field-value">${data.startDate || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">End Date:</span>
-          <span class="field-value">${data.endDate || 'N/A'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Project Description:</span>
-          <div class="field-value">${data.projectDescription || 'N/A'}</div>
-        </div>
-      </div>
 
-      <div class="section">
-        <div class="section-title">Additional Information</div>
-        <div class="field">
-          <span class="field-label">Previous Experience:</span>
-          <div class="field-value">${data.previousExperience || 'N/A'}</div>
+        <div class="section">
+          <div class="section-title">Additional Information</div>
+          <div class="field">
+            <span class="field-label">Previous Research Experience</span>
+            <div class="field-value textarea">${data.previousExperience || 'N/A'}</div>
+          </div>
+          <div class="field">
+            <span class="field-label">Special Requirements or Resources</span>
+            <div class="field-value textarea">${data.specialRequirements || 'N/A'}</div>
+          </div>
+          <div class="field-grid">
+            <div class="field">
+              <span class="field-label">Ethics Approval Required</span>
+              <div class="field-value">${data.ethicsApproval ? 'Yes' : 'No'}</div>
+            </div>
+            <div class="field">
+              <span class="field-label">Data Protection Agreement</span>
+              <div class="field-value">${data.dataProtection ? 'Agreed' : 'Not Specified'}</div>
+            </div>
+          </div>
         </div>
-        <div class="field">
-          <span class="field-label">Special Requirements:</span>
-          <div class="field-value">${data.specialRequirements || 'N/A'}</div>
-        </div>
-        <div class="field">
-          <span class="field-label">Ethics Approval:</span>
-          <span class="field-value">${data.ethicsApproval ? 'Yes' : 'No'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Data Protection Agreement:</span>
-          <span class="field-value">${data.dataProtection ? 'Agreed' : 'Not Agreed'}</span>
-        </div>
-        <div class="field">
-          <span class="field-label">Terms and Conditions:</span>
-          <span class="field-value">${data.agreementTerms ? 'Accepted' : 'Not Accepted'}</span>
-        </div>
-      </div>
 
-      <div class="signature-section">
-        <div class="signature-box">
-          <div>Student Signature</div>
-          <div>Date: ___________</div>
+        <div class="signature-section">
+          <div class="signature-box">
+            <div class="signature-line"></div>
+            <div class="signature-label">Student Signature</div>
+            <div class="date-line">Date: ${data.studentSignatureDate || '___________'}</div>
+          </div>
+          <div class="signature-box">
+            <div class="signature-line"></div>
+            <div class="signature-label">Supervisor Signature</div>
+            <div class="date-line">Date: ${data.supervisorSignatureDate || '___________'}</div>
+          </div>
         </div>
-        <div class="signature-box">
-          <div>Supervisor Signature</div>
-          <div>Date: ___________</div>
-        </div>
-      </div>
+      </body>
+      </html>
     `;
   };
 
   return (
-    <div className="form-preview-container">
-      <div className="form-preview-header no-print">
-        <div className="preview-title">
-          <Eye size={24} />
-          <h2>Form Preview</h2>
-        </div>
-        <div className="preview-actions">
-          <button 
-            onClick={handlePrint}
-            className="preview-btn print-btn"
-            title="Print form"
-          >
-            <Printer size={16} />
-            Print
-          </button>
-          <button 
-            onClick={handleDownloadPDF}
-            className="preview-btn download-btn"
-            disabled={isGeneratingPDF}
-            title="Download as PDF"
-          >
-            <Download size={16} />
-            {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
-          </button>
-          <button 
-            onClick={onClose}
-            className="preview-btn close-btn"
-            title="Close preview"
-          >
-            <X size={16} />
-            Close
-          </button>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Header Actions - Hidden when printing */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 print:hidden">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <Eye className="w-6 h-6 text-amber-600" />
+            <div>
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Form Preview</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                PHDEE02-A Form - {formSubmission.student_name}
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={handlePrint}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+              title="Print form"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Print
+            </button>
+            
+            <button 
+              onClick={handleDownloadPDF}
+              disabled={isGeneratingPDF}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center disabled:opacity-50"
+              title="Download as PDF"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {isGeneratingPDF ? 'Generating...' : 'Download PDF'}
+            </button>
+            
+            <button 
+              onClick={onClose}
+              className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center"
+              title="Close preview"
+            >
+              <X className="w-4 h-4 mr-2" />
+              Close
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="form-preview-content printable">
-        {/* Form Header */}
-        <div className="preview-header-section">
-          <h1>PHD RESEARCH PROJECT REGISTRATION FORM</h1>
-          <h2>PHDEE02-A</h2>
-          <div className="form-meta">
-            <div className="meta-item">
-              <strong>Form ID:</strong> #{formSubmission.id}
+      {/* Form Content */}
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+          {/* Form Header */}
+          <div className="bg-gradient-to-r from-amber-600 to-amber-700 text-white p-8 text-center">
+            <div className="flex justify-center mb-4">
+              <img 
+                src="/src/assets/itu-logo.svg" 
+                alt="ITU Logo" 
+                className="w-16 h-16 bg-white rounded-full p-2"
+              />
             </div>
-            <div className="meta-item">
-              <strong>Submitted:</strong> {new Date(formSubmission.submitted_at).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
+            <h1 className="text-2xl font-bold mb-2">PhD RESEARCH PROJECT REGISTRATION FORM</h1>
+            <h2 className="text-xl font-semibold mb-2">PHDEE02-A</h2>
+            <div className="flex items-center justify-center space-x-4 text-sm opacity-90">
+              <span>Form ID: #{formSubmission.id}</span>
+              <span>•</span>
+              <span>
+                Submitted: {new Date(formSubmission.submitted_at).toLocaleDateString('en-US', { 
+                  year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+                })}
+              </span>
             </div>
-            <div className="meta-item">
-              <strong>Status:</strong> 
-              <span className={`status-indicator ${formSubmission.supervisor_approval_status || 'pending'}`}>
-                {(formSubmission.supervisor_approval_status || 'pending').toUpperCase()}
+            <div className="mt-4">
+              <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                formSubmission.status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                formSubmission.status === 'approved' ? 'bg-green-100 text-green-800' :
+                'bg-red-100 text-red-800'
+              }`}>
+                {formSubmission.status === 'pending' && <Clock className="w-4 h-4 mr-1" />}
+                {formSubmission.status === 'approved' && <Eye className="w-4 h-4 mr-1" />}
+                {formSubmission.status === 'rejected' && <X className="w-4 h-4 mr-1" />}
+                Status: {formSubmission.status.charAt(0).toUpperCase() + formSubmission.status.slice(1)}
               </span>
             </div>
           </div>
-        </div>
 
-        {/* Student Information */}
-        <div className="preview-section">
-          <h3 className="section-title">
-            <User size={20} />
-            Student Information
-          </h3>
-          <div className="section-content">
-            <div className="field-grid">
-              <div className="field">
-                <label>Full Name:</label>
-                <span>{formData.studentName || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Student ID:</label>
-                <span>{formData.studentId || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Email Address:</label>
-                <span>{formData.studentEmail || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Program/Course:</label>
-                <span>{formData.program || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Academic Year:</label>
-                <span>{formData.year || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+          <div className="p-8 space-y-8">
+            {/* Student Information */}
+            <FormSection
+              title="Student Information"
+              icon={<User className="w-5 h-5" />}
+              fields={[
+                { label: 'Full Name', value: formData.studentName || formSubmission.student_name },
+                { label: 'Student ID', value: formData.studentId },
+                { label: 'Email Address', value: formData.studentEmail || formSubmission.student_email },
+                { label: 'Program', value: formData.program || 'PhD' },
+                { label: 'Academic Year', value: formData.year || new Date().getFullYear() },
+                { label: 'Department', value: formData.department || 'Computer Science' }
+              ]}
+            />
 
-        {/* Supervisor Information */}
-        <div className="preview-section">
-          <h3 className="section-title">
-            <Building size={20} />
-            Supervisor Information
-          </h3>
-          <div className="section-content">
-            <div className="field-grid">
-              <div className="field">
-                <label>Supervisor Name:</label>
-                <span>{formData.supervisorName || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Supervisor Email:</label>
-                <span>{formData.supervisorEmail || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Academic Title:</label>
-                <span>{formData.supervisorTitle || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Department/Faculty:</label>
-                <span>{formData.supervisorDepartment || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+            {/* Supervisor Information */}
+            <FormSection
+              title="Supervisor Information"
+              icon={<GraduationCap className="w-5 h-5" />}
+              fields={[
+                { label: 'Supervisor Name', value: formData.supervisorName },
+                { label: 'Supervisor Email', value: formData.supervisorEmail },
+                { label: 'Title/Position', value: formData.supervisorTitle },
+                { label: 'Department', value: formData.supervisorDepartment }
+              ]}
+            />
 
-        {/* Project Details */}
-        <div className="preview-section">
-          <h3 className="section-title">
-            <FileText size={20} />
-            Project Details
-          </h3>
-          <div className="section-content">
-            <div className="field-grid">
-              <div className="field full-width">
-                <label>Project Title:</label>
-                <span>{formData.projectTitle || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Project Type:</label>
-                <span>{formData.projectType || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Estimated Hours:</label>
-                <span>{formData.estimatedHours || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>Start Date:</label>
-                <span>{formData.startDate || 'N/A'}</span>
-              </div>
-              <div className="field">
-                <label>End Date:</label>
-                <span>{formData.endDate || 'N/A'}</span>
-              </div>
-              <div className="field full-width">
-                <label>Project Description:</label>
-                <div className="text-content">
-                  {formData.projectDescription || 'N/A'}
+            {/* Project Details */}
+            <FormSection
+              title="Project Details"
+              icon={<FileText className="w-5 h-5" />}
+              fields={[
+                { label: 'Project Title', value: formData.projectTitle || formSubmission.project_title, fullWidth: true },
+                { label: 'Project Type', value: formData.projectType || 'Research' },
+                { label: 'Estimated Duration', value: formData.estimatedHours },
+                { label: 'Start Date', value: formData.startDate },
+                { label: 'Expected Completion', value: formData.endDate },
+                { label: 'Project Description & Objectives', value: formData.projectDescription, fullWidth: true, textarea: true },
+                { label: 'Research Methodology', value: formData.methodology, fullWidth: true, textarea: true }
+              ]}
+            />
+
+            {/* Additional Information */}
+            <FormSection
+              title="Additional Information"
+              icon={<Building className="w-5 h-5" />}
+              fields={[
+                { label: 'Previous Research Experience', value: formData.previousExperience, fullWidth: true, textarea: true },
+                { label: 'Special Requirements or Resources', value: formData.specialRequirements, fullWidth: true, textarea: true },
+                { label: 'Ethics Approval Required', value: formData.ethicsApproval ? 'Yes' : 'No' },
+                { label: 'Data Protection Agreement', value: formData.dataProtection ? 'Agreed' : 'Not Specified' }
+              ]}
+            />
+
+            {/* Signatures */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-8">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+                <Calendar className="w-5 h-5 mr-2 text-amber-600" />
+                Signatures & Approval
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="text-center">
+                  <div className="border-t-2 border-gray-400 mb-4 h-16"></div>
+                  <p className="font-semibold text-gray-900 dark:text-white">Student Signature</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                    Date: {formData.studentSignatureDate || '_____________'}
+                  </p>
+                </div>
+                
+                <div className="text-center">
+                  <div className="border-t-2 border-gray-400 mb-4 h-16"></div>
+                  <p className="font-semibold text-gray-900 dark:text-white">Supervisor Signature</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                    Date: {formData.supervisorSignatureDate || '_____________'}
+                  </p>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Additional Information */}
-        <div className="preview-section">
-          <h3 className="section-title">
-            <Calendar size={20} />
-            Additional Information
-          </h3>
-          <div className="section-content">
-            <div className="field-grid">
-              <div className="field full-width">
-                <label>Previous Experience:</label>
-                <div className="text-content">
-                  {formData.previousExperience || 'N/A'}
+            {/* Supervisor Comments (if any) */}
+            {formSubmission.supervisor_comments && (
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-8">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                  <Mail className="w-5 h-5 mr-2 text-amber-600" />
+                  Supervisor Comments
+                </h3>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                    {formSubmission.supervisor_comments}
+                  </p>
+                  {formSubmission.approved_at && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                      Reviewed on: {new Date(formSubmission.approved_at).toLocaleDateString('en-US', {
+                        year: 'numeric', month: 'long', day: 'numeric'
+                      })}
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="field full-width">
-                <label>Special Requirements:</label>
-                <div className="text-content">
-                  {formData.specialRequirements || 'N/A'}
-                </div>
-              </div>
-              <div className="field">
-                <label>Ethics Approval Required:</label>
-                <span className={`boolean-value ${formData.ethicsApproval ? 'yes' : 'no'}`}>
-                  {formData.ethicsApproval ? 'Yes' : 'No'}
-                </span>
-              </div>
-              <div className="field">
-                <label>Data Protection Agreement:</label>
-                <span className={`boolean-value ${formData.dataProtection ? 'yes' : 'no'}`}>
-                  {formData.dataProtection ? 'Agreed' : 'Not Agreed'}
-                </span>
-              </div>
-              <div className="field full-width">
-                <label>Terms and Conditions:</label>
-                <span className={`boolean-value ${formData.agreementTerms ? 'yes' : 'no'}`}>
-                  {formData.agreementTerms ? 'Accepted' : 'Not Accepted'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Signature Section */}
-        <div className="signature-section">
-          <h3 className="section-title">Signatures</h3>
-          <div className="signature-grid">
-            <div className="signature-box">
-              <div className="signature-line"></div>
-              <div className="signature-label">Student Signature</div>
-              <div className="signature-date">Date: ___________</div>
-            </div>
-            <div className="signature-box">
-              <div className="signature-line"></div>
-              <div className="signature-label">Supervisor Signature</div>
-              <div className="signature-date">Date: ___________</div>
-            </div>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
-}; 
+};
+
+// Form Section Component
+const FormSection = ({ title, icon, fields }) => (
+  <div className="border-b border-gray-200 dark:border-gray-700 pb-8 last:border-b-0">
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 flex items-center">
+      <span className="text-amber-600 mr-2">{icon}</span>
+      {title}
+    </h3>
+    
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {fields.map((field, index) => (
+        <div 
+          key={index} 
+          className={field.fullWidth ? 'md:col-span-2' : ''}
+        >
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            {field.label}
+          </label>
+          {field.textarea ? (
+            <div className="min-h-24 p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg">
+              <p className="text-gray-900 dark:text-white whitespace-pre-wrap">
+                {field.value || 'Not provided'}
+              </p>
+            </div>
+          ) : (
+            <div className="p-3 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg">
+              <p className="text-gray-900 dark:text-white">
+                {field.value || 'Not provided'}
+              </p>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+); 
