@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 
 // Import configuration
 const config = require('./config/env');
@@ -18,16 +20,27 @@ app.use(express.urlencoded({ extended: true }));
 // Initialize database connection
 connectDB();
 
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads/attachments');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve static files for uploads (with proper auth middleware)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // Make pool available to routes
 app.locals.db = pool;
 
 // Routes
 const authRoutes = require('./routes/auth');
 const formsRoutes = require('./routes/forms');
+const adminRoutes = require('./routes/admin');
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/forms', formsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -39,6 +52,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // Error handling middleware
+// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ 

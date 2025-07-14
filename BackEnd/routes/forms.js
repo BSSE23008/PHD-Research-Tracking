@@ -1,614 +1,431 @@
 const express = require('express');
 const router = express.Router();
+const FormController = require('../controllers/FormController');
+const WorkflowService = require('../services/WorkflowService');
+const NotificationService = require('../services/NotificationService');
 const { authenticateToken } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
 
-// Form data model (using database queries directly)
-const getFormModel = (db) => ({
-  // Save form progress
-  async saveProgress(userId, formType, formData, stepNumber) {
-    const query = `
-      INSERT INTO form_progress (user_id, form_type, form_data, step_number, updated_at)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-      ON CONFLICT (user_id, form_type)
-      DO UPDATE SET 
-        form_data = EXCLUDED.form_data,
-        step_number = EXCLUDED.step_number,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING *
-    `;
-    
-    const result = await db.query(query, [userId, formType, JSON.stringify(formData), stepNumber]);
-    return result.rows[0];
-  },
-
-  // Load form progress
-  async loadProgress(userId, formType) {
-    const query = `
-      SELECT * FROM form_progress 
-      WHERE user_id = $1 AND form_type = $2
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `;
-    
-    const result = await db.query(query, [userId, formType]);
-    return result.rows[0] || null;
-  },
-
-  // Submit form
-  async submitForm(userId, formType, formData) {
-    const client = await db.connect();
-    
-    try {
-      await client.query('BEGIN');
-      
-      // Insert form submission
-      const submissionQuery = `
-        INSERT INTO form_submissions (user_id, form_type, form_data, submitted_at, status)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP, 'submitted')
-        RETURNING *
-      `;
-      
-      const submissionResult = await client.query(submissionQuery, [
-        userId, 
-        formType, 
-        JSON.stringify(formData)
-      ]);
-      
-      // Clear progress after successful submission
-      const clearProgressQuery = `
-        DELETE FROM form_progress 
-        WHERE user_id = $1 AND form_type = $2
-      `;
-      
-      await client.query(clearProgressQuery, [userId, formType]);
-      
-      await client.query('COMMIT');
-      return submissionResult.rows[0];
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, 'uploads/attachments/');
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
     }
-  },
-
-  // Get form submissions
-  async getSubmissions(userId, formType = null) {
-    let query = `
-      SELECT * FROM form_submissions 
-      WHERE user_id = $1
-    `;
-    const params = [userId];
-    
-    if (formType) {
-      query += ` AND form_type = $2`;
-      params.push(formType);
-    }
-    
-    query += ` ORDER BY submitted_at DESC`;
-    
-    const result = await db.query(query, params);
-    return result.rows;
-  }
 });
 
-// @route   POST /api/forms/save-progress
-// @desc    Save form progress
-// @access  Private
-router.post('/save-progress', authenticateToken, async (req, res) => {
-  try {
-    const { formType, formData, stepNumber } = req.body;
-    const userId = req.user.id;
+const upload = multer({
+    storage: storage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+        // Allow common document types
+        const allowedTypes = /pdf|doc|docx|jpg|jpeg|png|txt/;
+        const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedTypes.test(file.mimetype);
 
-    if (!formType || !formData) {
-      return res.status(400).json({ 
-        message: 'Form type and form data are required' 
-      });
-    }
-
-    const formModel = getFormModel(req.app.locals.db);
-    const result = await formModel.saveProgress(userId, formType, formData, stepNumber || 0);
-
-    res.json({
-      message: 'Form progress saved successfully',
-      data: result
-    });
-
-  } catch (error) {
-    console.error('Save progress error:', error);
-    res.status(500).json({ 
-      message: 'Server error while saving progress',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   GET /api/forms/load-progress
-// @desc    Load form progress
-// @access  Private
-router.get('/load-progress', authenticateToken, async (req, res) => {
-  try {
-    const { formType } = req.query;
-    const userId = req.user.id;
-
-    if (!formType) {
-      return res.status(400).json({ 
-        message: 'Form type is required' 
-      });
-    }
-
-    const formModel = getFormModel(req.app.locals.db);
-    const progress = await formModel.loadProgress(userId, formType);
-
-    if (!progress) {
-      return res.status(404).json({ 
-        message: 'No saved progress found for this form' 
-      });
-    }
-
-    res.json({
-      message: 'Form progress loaded successfully',
-      formData: {
-        formData: JSON.parse(progress.form_data),
-        stepNumber: progress.step_number,
-        lastUpdated: progress.updated_at
-      }
-    });
-
-  } catch (error) {
-    console.error('Load progress error:', error);
-    res.status(500).json({ 
-      message: 'Server error while loading progress',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   POST /api/forms/submit
-// @desc    Submit completed form
-// @access  Private
-router.post('/submit', authenticateToken, async (req, res) => {
-  try {
-    const { formType, formData } = req.body;
-    const userId = req.user.id;
-
-    if (!formType || !formData) {
-      return res.status(400).json({ 
-        message: 'Form type and form data are required' 
-      });
-    }
-
-    const formModel = getFormModel(req.app.locals.db);
-    const submission = await formModel.submitForm(userId, formType, formData);
-
-    res.json({
-      message: 'Form submitted successfully',
-      data: {
-        submissionId: submission.id,
-        submittedAt: submission.submitted_at,
-        status: submission.status
-      }
-    });
-
-  } catch (error) {
-    console.error('Form submission error:', error);
-    res.status(500).json({ 
-      message: 'Server error while submitting form',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   GET /api/forms/submissions
-// @desc    Get form submissions history
-// @access  Private
-router.get('/submissions', authenticateToken, async (req, res) => {
-  try {
-    const { formType } = req.query;
-    const userId = req.user.id;
-
-    const formModel = getFormModel(req.app.locals.db);
-    const submissions = await formModel.getSubmissions(userId, formType);
-
-    // Parse JSON data for response
-    const parsedSubmissions = submissions.map(submission => ({
-      ...submission,
-      form_data: JSON.parse(submission.form_data)
-    }));
-
-    res.json({
-      message: 'Form submissions retrieved successfully',
-      submissions: parsedSubmissions
-    });
-
-  } catch (error) {
-    console.error('Get submissions error:', error);
-    res.status(500).json({ 
-      message: 'Server error while retrieving submissions',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   GET /api/forms/supervisor/pending-approvals
-// @desc    Get pending student forms for supervisor approval
-// @access  Private (Supervisor only)
-router.get('/supervisor/pending-approvals', authenticateToken, async (req, res) => {
-  try {
-    const supervisorId = req.user.id;
-    const supervisorEmail = req.user.email;
-
-    // Check if user is a supervisor
-    if (req.user.role !== 'supervisor') {
-      return res.status(403).json({ 
-        message: 'Access denied. Supervisor role required.' 
-      });
-    }
-
-    const query = `
-      SELECT 
-        fs.*,
-        u.first_name || ' ' || u.last_name as student_name,
-        u.email as student_email,
-        COALESCE(
-          fs.form_data->>'projectTitle',
-          fs.form_data->'project'->>'title',
-          fs.form_data->'projectDetails'->>'title'
-        ) as project_title,
-        COALESCE(
-          fs.form_data->>'supervisorEmail',
-          fs.form_data->'supervisorDetails'->>'email',
-          fs.form_data->'supervisor'->>'email'
-        ) as supervisor_email
-      FROM form_submissions fs
-      JOIN users u ON fs.user_id = u.id
-      WHERE fs.supervisor_approval_status = 'pending'
-      AND (
-        fs.form_data->>'supervisorEmail' = $1 
-        OR fs.form_data->'supervisorDetails'->>'email' = $1
-        OR fs.form_data->'supervisor'->>'email' = $1
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM supervisor_consent_forms scf 
-        WHERE scf.form_submission_id = fs.id
-      )
-      ORDER BY fs.submitted_at DESC
-    `;
-
-    const result = await req.app.locals.db.query(query, [supervisorEmail]);
-
-    res.json({
-      message: 'Pending approvals retrieved successfully',
-      data: result.rows
-    });
-
-  } catch (error) {
-    console.error('Get pending approvals error:', error);
-    res.status(500).json({ 
-      message: 'Server error while retrieving pending approvals',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   POST /api/forms/supervisor/consent
-// @desc    Submit supervisor consent form
-// @access  Private (Supervisor only)
-router.post('/supervisor/consent', authenticateToken, async (req, res) => {
-  try {
-    const supervisorId = req.user.id;
-    const { formSubmissionId, consentData, approved } = req.body;
-
-    // Check if user is a supervisor
-    if (req.user.role !== 'supervisor') {
-      return res.status(403).json({ 
-        message: 'Access denied. Supervisor role required.' 
-      });
-    }
-
-    if (!formSubmissionId || !consentData) {
-      return res.status(400).json({ 
-        message: 'Form submission ID and consent data are required' 
-      });
-    }
-
-    const client = await req.app.locals.db.connect();
-    
-    try {
-      await client.query('BEGIN');
-
-      // Get the original form submission
-      const submissionQuery = `
-        SELECT fs.*, u.id as student_id 
-        FROM form_submissions fs
-        JOIN users u ON fs.user_id = u.id
-        WHERE fs.id = $1
-      `;
-      const submissionResult = await client.query(submissionQuery, [formSubmissionId]);
-      
-      if (submissionResult.rows.length === 0) {
-        throw new Error('Form submission not found');
-      }
-
-      const submission = submissionResult.rows[0];
-
-      // Insert supervisor consent form
-      const consentQuery = `
-        INSERT INTO supervisor_consent_forms (
-          form_submission_id, supervisor_id, student_id,
-          supervisor_name, area_of_research, contact_no, student_signature_date,
-          hec_approved_supervisor_ref, num_existing_phd_students, num_existing_ms_students,
-          designation, as_supervisor, as_co_supervisor,
-          email, contact_number, supervisor_signature_date,
-          status
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17
-        ) RETURNING *
-      `;
-
-      const consentValues = [
-        formSubmissionId,
-        supervisorId,
-        submission.student_id,
-        consentData.supervisorName,
-        consentData.areaOfResearch,
-        consentData.contactNo,
-        consentData.studentSignatureDate || null,
-        consentData.hecApprovedSupervisorRef,
-        consentData.numExistingPhdStudents || 0,
-        consentData.numExistingMsStudents || 0,
-        consentData.designation,
-        consentData.asSupervisor,
-        consentData.asCoSupervisor,
-        consentData.email,
-        consentData.contactNumber,
-        consentData.supervisorSignatureDate,
-        approved ? 'approved' : 'rejected'
-      ];
-
-      const consentResult = await client.query(consentQuery, consentValues);
-
-      // Update form submission approval status
-      const updateSubmissionQuery = `
-        UPDATE form_submissions 
-        SET 
-          supervisor_approval_status = $1,
-          supervisor_approved_by = $2,
-          supervisor_approved_at = CURRENT_TIMESTAMP,
-          supervisor_comments = $3
-        WHERE id = $4
-        RETURNING *
-      `;
-
-      const updateValues = [
-        approved ? 'approved' : 'rejected',
-        supervisorId,
-        consentData.comments || null,
-        formSubmissionId
-      ];
-
-      await client.query(updateSubmissionQuery, updateValues);
-
-      await client.query('COMMIT');
-
-      res.json({
-        message: 'Supervisor consent form submitted successfully',
-        data: {
-          consentFormId: consentResult.rows[0].id,
-          approved,
-          submittedAt: consentResult.rows[0].filled_at
+        if (mimetype && extname) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only PDF, DOC, DOCX, JPG, JPEG, PNG, and TXT files are allowed'));
         }
-      });
+    }
+});
+
+// Apply authentication to all routes
+router.use(authenticateToken);
+
+// Form type management routes
+router.get('/types', FormController.getFormTypes);
+router.get('/available', FormController.getAvailableForms);
+router.get('/schema/:formCode', FormController.getFormSchema);
+
+// Form progress routes (auto-save functionality)
+router.post('/progress', FormController.saveProgress);
+router.get('/progress/:formCode', FormController.loadProgress);
+
+// Form submission routes
+router.post('/submit', FormController.submitForm);
+router.get('/submissions', FormController.getSubmissions);
+router.get('/submissions/:submissionId', FormController.getSubmissionById);
+
+// File attachment routes
+router.post('/submissions/:submissionId/attachments', upload.single('file'), FormController.uploadAttachment);
+
+// Workflow-related routes
+router.get('/workflow/status', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        if (req.user.role !== 'student') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only students can access workflow status'
+            });
+        }
+
+        const workflowStatus = await WorkflowService.getStudentWorkflowStatus(userId);
+        
+        res.json({
+            success: true,
+            data: workflowStatus
+        });
+    } catch (error) {
+        console.error('Error fetching workflow status:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch workflow status',
+            error: error.message
+        });
+    }
+});
+
+router.put('/workflow/semester', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { semester, academicYear } = req.body;
+        
+        if (req.user.role !== 'student') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only students can update semester information'
+            });
+        }
+
+        if (!semester || !academicYear) {
+            return res.status(400).json({
+                success: false,
+                message: 'Semester and academic year are required'
+            });
+        }
+
+        const updatedProgress = await WorkflowService.updateStudentSemester(userId, semester, academicYear);
+        
+        res.json({
+            success: true,
+            message: 'Semester information updated successfully',
+            data: updatedProgress
+        });
+    } catch (error) {
+        console.error('Error updating semester:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update semester information',
+            error: error.message
+        });
+    }
+});
+
+// Notification routes for forms
+router.get('/notifications', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { isRead, notificationType, page, limit } = req.query;
+        
+        const notifications = await NotificationService.getUserNotifications(userId, {
+            isRead: isRead !== undefined ? isRead === 'true' : null,
+            notificationType,
+            page: parseInt(page) || 1,
+            limit: parseInt(limit) || 20
+        });
+        
+        res.json({
+            success: true,
+            data: notifications
+        });
+    } catch (error) {
+        console.error('Error fetching notifications:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch notifications',
+            error: error.message
+        });
+    }
+});
+
+router.put('/notifications/:notificationId/read', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const userId = req.user.id;
+        
+        const notification = await NotificationService.markAsRead(parseInt(notificationId), userId);
+        
+        if (!notification) {
+            return res.status(404).json({
+                success: false,
+                message: 'Notification not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Notification marked as read',
+            data: notification
+        });
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to mark notification as read',
+            error: error.message
+        });
+    }
+});
+
+router.put('/notifications/mark-all-read', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        const updatedCount = await NotificationService.markAllAsRead(userId);
+        
+        res.json({
+            success: true,
+            message: 'All notifications marked as read',
+            data: {
+                updatedCount
+            }
+        });
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to mark all notifications as read',
+            error: error.message
+        });
+    }
+});
+
+router.delete('/notifications/:notificationId', async (req, res) => {
+    try {
+        const { notificationId } = req.params;
+        const userId = req.user.id;
+        
+        const deleted = await NotificationService.deleteNotification(parseInt(notificationId), userId);
+        
+        if (!deleted) {
+            return res.status(404).json({
+                success: false,
+                message: 'Notification not found'
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Notification deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error deleting notification:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to delete notification',
+            error: error.message
+        });
+    }
+});
+
+router.get('/notifications/unread-count', async (req, res) => {
+    try {
+        const userId = req.user.id;
+        
+        const unreadCount = await NotificationService.getUnreadCount(userId);
+        
+        res.json({
+            success: true,
+            data: {
+                unreadCount
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching unread count:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch unread count',
+            error: error.message
+        });
+    }
+});
+
+// Form analytics (for admins and supervisors)
+router.get('/analytics', async (req, res) => {
+    try {
+        if (!['admin', 'supervisor'].includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin or supervisor access required'
+            });
+        }
+
+        await FormController.getFormAnalytics(req, res);
+    } catch (error) {
+        console.error('Error in analytics route:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch analytics',
+            error: error.message
+        });
+    }
+});
+
+// Supervisor-specific routes
+router.get('/supervisor/pending-approvals', async (req, res) => {
+    try {
+        if (req.user.role !== 'supervisor') {
+            return res.status(403).json({
+                success: false,
+                message: 'Supervisor access required'
+            });
+        }
+
+        const supervisorId = req.user.id;
+        
+        // Get pending approvals for this supervisor's students
+        const pendingQuery = `
+            SELECT 
+                fs.id,
+                fs.status,
+                fs.submitted_at,
+                fs.supervisor_approval_status,
+                fs.form_data,
+                u.first_name || ' ' || u.last_name as student_name,
+                u.email as student_email,
+                u.student_id,
+                ft.form_name,
+                ft.form_code,
+                ft.workflow_stage
+            FROM form_submissions fs
+            JOIN users u ON fs.user_id = u.id
+            JOIN form_types ft ON fs.form_type_id = ft.id
+            JOIN supervisor_consent_forms scf ON scf.student_id = u.id
+            JOIN form_submissions consent_fs ON scf.form_submission_id = consent_fs.id
+            WHERE scf.supervisor_id = $1 
+            AND fs.supervisor_approval_status = 'pending'
+            AND ft.requires_supervisor_approval = true
+            AND consent_fs.status = 'approved'
+            ORDER BY fs.submitted_at ASC
+        `;
+
+        const result = await req.app.locals.db.query(pendingQuery, [supervisorId]);
+
+        res.json({
+            success: true,
+            data: {
+                pendingApprovals: result.rows
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching supervisor pending approvals:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch pending approvals',
+            error: error.message
+        });
+    }
+});
+
+router.put('/supervisor/approvals/:submissionId', async (req, res) => {
+    try {
+        if (req.user.role !== 'supervisor') {
+            return res.status(403).json({
+                success: false,
+                message: 'Supervisor access required'
+            });
+        }
+
+        const { submissionId } = req.params;
+        // Extract action and comments from request body (used by FormController)
+        const supervisorId = req.user.id;
+
+        // Verify this supervisor can approve this submission
+        const verifyQuery = `
+            SELECT fs.id 
+            FROM form_submissions fs
+            JOIN users u ON fs.user_id = u.id
+            JOIN supervisor_consent_forms scf ON scf.student_id = u.id
+            JOIN form_submissions consent_fs ON scf.form_submission_id = consent_fs.id
+            WHERE fs.id = $1 AND scf.supervisor_id = $2 AND consent_fs.status = 'approved'
+        `;
+
+        const verifyResult = await req.app.locals.db.query(verifyQuery, [submissionId, supervisorId]);
+
+        if (verifyResult.rows.length === 0) {
+            return res.status(403).json({
+                success: false,
+                message: 'You are not authorized to approve this submission'
+            });
+        }
+
+        // Use the admin controller method with supervisor approval type
+        req.body.approvalType = 'supervisor';
+        await FormController.updateFormApproval(req, res);
 
     } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+        console.error('Error updating supervisor approval:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update approval',
+            error: error.message
+        });
     }
-
-  } catch (error) {
-    console.error('Supervisor consent submission error:', error);
-    res.status(500).json({ 
-      message: 'Server error while submitting consent form',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
 });
 
-// @route   GET /api/forms/supervisor-consent/:submissionId
-// @desc    Get supervisor consent form for a submission
-// @access  Private
-router.get('/supervisor-consent/:submissionId', authenticateToken, async (req, res) => {
-  try {
-    const { submissionId } = req.params;
-    const userId = req.user.id;
+// Student dashboard summary
+router.get('/dashboard/summary', async (req, res) => {
+    try {
+        if (req.user.role !== 'student') {
+            return res.status(403).json({
+                success: false,
+                message: 'Student access required'
+            });
+        }
 
-    // Get the supervisor consent form data
-    const query = `
-      SELECT scf.*, fs.user_id as form_owner_id
-      FROM supervisor_consent_forms scf
-      JOIN form_submissions fs ON scf.form_submission_id = fs.id
-      WHERE scf.form_submission_id = $1
-      AND (fs.user_id = $2 OR scf.supervisor_id = $2)
-    `;
+        const userId = req.user.id;
 
-    const result = await req.app.locals.db.query(query, [submissionId, userId]);
+        // Get workflow status
+        const workflowStatus = await WorkflowService.getStudentWorkflowStatus(userId);
+        
+        // Get recent submissions
+        const recentSubmissionsQuery = `
+            SELECT 
+                fs.id,
+                fs.status,
+                fs.submitted_at,
+                fs.admin_approval_status,
+                fs.supervisor_approval_status,
+                ft.form_name,
+                ft.form_code
+            FROM form_submissions fs
+            JOIN form_types ft ON fs.form_type_id = ft.id
+            WHERE fs.user_id = $1
+            ORDER BY fs.submitted_at DESC
+            LIMIT 5
+        `;
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        message: 'Supervisor consent form not found' 
-      });
+        const recentSubmissions = await req.app.locals.db.query(recentSubmissionsQuery, [userId]);
+
+        // Get unread notifications count
+        const unreadCount = await NotificationService.getUnreadCount(userId);
+
+        res.json({
+            success: true,
+            data: {
+                workflowStatus,
+                recentSubmissions: recentSubmissions.rows,
+                unreadNotifications: unreadCount
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard summary:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch dashboard summary',
+            error: error.message
+        });
     }
-
-    res.json({
-      message: 'Supervisor consent form retrieved successfully',
-      data: result.rows[0]
-    });
-
-  } catch (error) {
-    console.error('Get supervisor consent error:', error);
-    res.status(500).json({ 
-      message: 'Server error while retrieving supervisor consent',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   GET /api/forms/supervisor/stats
-// @desc    Get supervisor statistics
-// @access  Private (Supervisor only)
-router.get('/supervisor/stats', authenticateToken, async (req, res) => {
-  try {
-    const supervisorEmail = req.user.email;
-    const supervisorId = req.user.id;
-
-    // Check if user is a supervisor
-    if (req.user.role !== 'supervisor') {
-      return res.status(403).json({ 
-        message: 'Access denied. Supervisor role required.' 
-      });
-    }
-
-    // Get supervisor statistics using compatible SQL syntax
-    const statsQuery = `
-      SELECT 
-        COUNT(CASE WHEN fs.supervisor_approval_status = 'pending' THEN 1 END) as pending_approvals,
-        COUNT(CASE WHEN fs.supervisor_approval_status = 'approved' THEN 1 END) as approved_forms,
-        COUNT(CASE WHEN fs.supervisor_approval_status = 'rejected' THEN 1 END) as rejected_forms,
-        COUNT(*) as total_submissions,
-        COUNT(DISTINCT fs.user_id) as total_students
-      FROM form_submissions fs
-      WHERE (
-        fs.form_data->>'supervisorEmail' = $1 
-        OR fs.form_data->'supervisorDetails'->>'email' = $1
-        OR fs.form_data->'supervisor'->>'email' = $1
-        OR fs.supervisor_approved_by = $2
-      )
-    `;
-
-    const result = await req.app.locals.db.query(statsQuery, [supervisorEmail, supervisorId]);
-    const stats = result.rows[0] || {};
-
-    // Get recent activity count (last 30 days)
-    const recentActivityQuery = `
-      SELECT COUNT(*) as recent_submissions
-      FROM form_submissions fs
-      WHERE (
-        fs.form_data->>'supervisorEmail' = $1 
-        OR fs.form_data->'supervisorDetails'->>'email' = $1
-        OR fs.form_data->'supervisor'->>'email' = $1
-        OR fs.supervisor_approved_by = $2
-      )
-      AND fs.submitted_at >= CURRENT_DATE - INTERVAL '30 days'
-    `;
-
-    const recentResult = await req.app.locals.db.query(recentActivityQuery, [supervisorEmail, supervisorId]);
-    const recentStats = recentResult.rows[0] || {};
-
-    res.json({
-      message: 'Supervisor statistics retrieved successfully',
-      data: {
-        pendingApprovals: parseInt(stats.pending_approvals) || 0,
-        approvedForms: parseInt(stats.approved_forms) || 0,
-        rejectedForms: parseInt(stats.rejected_forms) || 0,
-        totalSubmissions: parseInt(stats.total_submissions) || 0,
-        totalStudents: parseInt(stats.total_students) || 0,
-        recentSubmissions: parseInt(recentStats.recent_submissions) || 0
-      }
-    });
-
-  } catch (error) {
-    console.error('Get supervisor stats error:', error);
-    res.status(500).json({ 
-      message: 'Server error while retrieving supervisor statistics',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
-});
-
-// @route   GET /api/forms/supervisor/timeline
-// @desc    Get timeline of all form activities for supervisor
-// @access  Private (Supervisor only)
-router.get('/supervisor/timeline', authenticateToken, async (req, res) => {
-  try {
-    const supervisorEmail = req.user.email;
-    const supervisorId = req.user.id;
-
-    // Check if user is a supervisor
-    if (req.user.role !== 'supervisor') {
-      return res.status(403).json({ 
-        message: 'Access denied. Supervisor role required.' 
-      });
-    }
-
-    // Get timeline data - both form submissions and consent form activities
-    const timelineQuery = `
-      SELECT 
-        fs.id,
-        fs.submitted_at as timestamp,
-        'form_submitted' as type,
-        u.first_name || ' ' || u.last_name as student_name,
-        u.email as student_email,
-        COALESCE(
-          fs.form_data->>'projectTitle',
-          fs.form_data->'project'->>'title',
-          fs.form_data->'projectDetails'->>'title',
-          'Untitled Project'
-        ) as project_title,
-        fs.supervisor_approval_status as status,
-        'Student submitted PHDEE02-A form for research approval' as description
-      FROM form_submissions fs
-      JOIN users u ON fs.user_id = u.id
-      WHERE (
-        fs.form_data->>'supervisorEmail' = $1 
-        OR fs.form_data->'supervisorDetails'->>'email' = $1
-        OR fs.form_data->'supervisor'->>'email' = $1
-        OR fs.supervisor_approved_by = $2
-      )
-      
-      UNION ALL
-      
-      SELECT 
-        scf.id,
-        scf.filled_at as timestamp,
-        CASE 
-          WHEN scf.status = 'approved' THEN 'form_approved'
-          WHEN scf.status = 'rejected' THEN 'form_rejected'
-          ELSE 'form_consent'
-        END as type,
-        u.first_name || ' ' || u.last_name as student_name,
-        u.email as student_email,
-        scf.area_of_research as project_title,
-        scf.status,
-        CASE 
-          WHEN scf.status = 'approved' THEN 'Supervisor consent form completed and approved'
-          WHEN scf.status = 'rejected' THEN 'Supervisor consent form rejected - additional information required'
-          ELSE 'Supervisor consent form completed'
-        END as description
-      FROM supervisor_consent_forms scf
-      JOIN form_submissions fs ON scf.form_submission_id = fs.id
-      JOIN users u ON fs.user_id = u.id
-      WHERE scf.supervisor_id = $2
-      
-      ORDER BY timestamp DESC
-      LIMIT 50
-    `;
-
-    const result = await req.app.locals.db.query(timelineQuery, [supervisorEmail, supervisorId]);
-
-    res.json({
-      message: 'Timeline data retrieved successfully',
-      data: result.rows
-    });
-
-  } catch (error) {
-    console.error('Get supervisor timeline error:', error);
-    res.status(500).json({ 
-      message: 'Server error while retrieving timeline data',
-      error: process.env.NODE_ENV === 'development' ? error.message : {}
-    });
-  }
 });
 
 module.exports = router;
