@@ -10,7 +10,7 @@ const FORM_STEPS = [
   { id: 3, title: 'Additional Information', description: 'Supplementary details and declarations' }
 ];
 
-export const PHDEE02AForm = ({ user, onClose, onSubmissionComplete }) => {
+export const PHDEE02AForm = ({ onClose, onSubmissionComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -61,7 +61,7 @@ export const PHDEE02AForm = ({ user, onClose, onSubmissionComplete }) => {
         // Fetch user profile for auto-fill
         const profileResult = await fetchExtendedUserProfile();
         if (profileResult.success) {
-          const autoFillData = getAutoFillData(profileResult.user, 'PHDEE02-A');
+          const autoFillData = getAutoFillData(profileResult.user);
           const autoFilledFieldNames = new Set();
           
           // Only auto-fill if the field is currently empty

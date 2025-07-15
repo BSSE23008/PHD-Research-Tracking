@@ -1,391 +1,293 @@
 import { useState, useEffect } from 'react';
-import { PHDEE02AForm } from './forms/PHDEE02-A';
-import { FormViewer } from './forms/FormViewer';
-import './Dashboard.css';
+import { 
+  getDashboardSummary, 
+  getFormSubmissions, 
+  formatDate,
+  getStatusColor,
+  getWorkflowStageDisplayName
+} from '../utils/api';
 
-const Dashboard = ({ user, onLogout }) => {
+const Dashboard = ({ user, onNavigate, onFormSelect }) => {
   const [loading, setLoading] = useState(true);
-  const [userProfile, setUserProfile] = useState(null);
-  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard', 'forms', 'phdee02a', 'form-viewer'
+  const [dashboardData, setDashboardData] = useState({
+    workflowStatus: {},
+    recentSubmissions: [],
+    unreadNotifications: 0
+  });
   const [formSubmissions, setFormSubmissions] = useState([]);
-  const [selectedFormSubmission, setSelectedFormSubmission] = useState(null);
-  const [supervisorConsent, setSupervisorConsent] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const initializeDashboard = async () => {
-      setLoading(true);
-      try {
-      setUserProfile(user);
-        
-        // Load user's form submissions
-        await loadFormSubmissions();
-      } catch (error) {
-        console.error('Error initializing dashboard:', error);
-      } finally {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [summaryResult, submissionsResult] = await Promise.all([
+        getDashboardSummary(),
+        getFormSubmissions()
+      ]);
+
+      if (summaryResult.success) {
+        setDashboardData(summaryResult.data);
+      }
+
+      if (submissionsResult.success) {
+        setFormSubmissions(submissionsResult.data.submissions || []);
+      }
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      setError('Failed to load dashboard data. Please refresh the page.');
+    } finally {
       setLoading(false);
-      }
-    };
-
-    initializeDashboard();
-  }, [user]);
-
-  const loadFormSubmissions = async () => {
-    try {
-      const response = await fetch('/api/forms/submissions', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setFormSubmissions(result.submissions || []);
-      }
-    } catch (error) {
-      console.error('Error loading form submissions:', error);
     }
   };
 
-  const handleLogout = () => {
-    // Clear any stored tokens
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-    onLogout();
-  };
-
-  const handleFormSubmissionComplete = async (submissionData) => {
-    console.log('Form submitted successfully:', submissionData);
-    // Reload form submissions to show the new submission
-    await loadFormSubmissions();
-    setCurrentView('dashboard');
-    alert('Form submitted successfully!');
-  };
-
-  const handleViewForm = async (formSubmission) => {
-    try {
-      setSelectedFormSubmission(formSubmission);
-      
-      // Try to load supervisor consent if it exists
-      const consentResponse = await fetch(`/api/forms/supervisor-consent/${formSubmission.id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || sessionStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (consentResponse.ok) {
-        const consentResult = await consentResponse.json();
-        setSupervisorConsent(consentResult.data);
-      } else {
-        setSupervisorConsent(null);
-      }
-      
-      setCurrentView('form-viewer');
-    } catch (error) {
-      console.error('Error loading form details:', error);
-      setSupervisorConsent(null);
-      setCurrentView('form-viewer');
+  const handleNavigation = (page, formCode = null) => {
+    if (onNavigate) {
+      onNavigate(page);
+    }
+    if (formCode && onFormSelect) {
+      // Small delay to ensure page transition completes
+      setTimeout(() => {
+        onFormSelect(formCode);
+      }, 100);
     }
   };
+
+  const StatCard = ({ title, value, description, color = 'blue', icon, onClick }) => (
+    <div 
+      className={`bg-white p-6 rounded-2xl shadow-soft hover:shadow-medium transition-shadow ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className={`text-2xl font-bold text-${color}-600 mt-1`}>{value}</p>
+          {description && (
+            <p className="text-sm text-gray-500 mt-1">{description}</p>
+          )}
+        </div>
+        {icon && (
+          <div className={`p-3 rounded-full bg-${color}-100`}>
+            <div className={`w-6 h-6 text-${color}-600`}>{icon}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const QuickAction = ({ title, description, onClick, color = 'primary' }) => (
+    <button
+      onClick={onClick}
+      className={`p-4 text-left border-2 border-dashed border-${color}-200 rounded-lg hover:border-${color}-300 hover:bg-${color}-50 transition-colors w-full`}
+    >
+      <div className={`text-sm font-medium text-${color}-600`}>{title}</div>
+      <div className="text-xs text-gray-500 mt-1">{description}</div>
+    </button>
+  );
 
   if (loading) {
     return (
-      <div className="dashboard-container">
-        <div className="loading-spinner">
-          <div className="spinner"></div>
-          <p>Loading your dashboard...</p>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // Render the form viewer
-  if (currentView === 'form-viewer' && selectedFormSubmission) {
+  if (error) {
     return (
-      <div className="dashboard-container">
-        <div className="dashboard-wrapper">
-          <FormViewer
-            formSubmission={selectedFormSubmission}
-            supervisorConsent={supervisorConsent}
-            onClose={() => setCurrentView('dashboard')}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // Render the form view
-  if (currentView === 'phdee02a') {
-    return (
-      <div className="dashboard-container">
-        <div className="dashboard-wrapper">
-          {/* Header */}
-          <header className="dashboard-header">
-            <div className="header-content">
-              <div className="header-left">
-                <h1>PhD Research Tracking</h1>
-                <p>PHDEE02-A Form</p>
-              </div>
-              <div className="header-right">
-                <div className="user-info">
-                  <span className="user-name">
-                    {userProfile?.firstName} {userProfile?.lastName}
-                  </span>
-                  <span className="user-role">{userProfile?.role?.toUpperCase()}</span>
-                </div>
-                <button 
-                  onClick={() => setCurrentView('dashboard')} 
-                  className="logout-btn"
-                  style={{ marginRight: '1rem' }}
-                >
-                  Back to Dashboard
-                </button>
-                <button onClick={handleLogout} className="logout-btn">
-                  Logout
-                </button>
-              </div>
-            </div>
-          </header>
-
-          {/* Form Content */}
-          <main className="dashboard-main">
-            <PHDEE02AForm 
-              user={userProfile}
-              onClose={() => setCurrentView('dashboard')}
-              onSubmissionComplete={handleFormSubmissionComplete}
-            />
-          </main>
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-red-800">Error</h3>
+            <p className="text-sm text-red-700 mt-1">{error}</p>
+            <button
+              onClick={loadDashboardData}
+              className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="dashboard-container">
-      <div className="dashboard-wrapper">
-        {/* Header */}
-        <header className="dashboard-header">
-          <div className="header-content">
-            <div className="header-left">
-              <h1>PhD Research Tracking</h1>
-              <p>Welcome back, {userProfile?.firstName}!</p>
-            </div>
-            <div className="header-right">
-              <div className="user-info">
-                <span className="user-name">
-                  {userProfile?.firstName} {userProfile?.lastName}
-                </span>
-                <span className="user-role">{userProfile?.role?.toUpperCase()}</span>
-              </div>
-              <button onClick={handleLogout} className="logout-btn">
-                Logout
-              </button>
-            </div>
+    <div className="space-y-8">
+      {/* Welcome Section */}
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome back, {user.first_name}!</h1>
+            <p className="text-primary-100 mt-1">Track your PhD journey and manage your submissions</p>
           </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="dashboard-main">
-          <div className="welcome-section">
-            <div className="welcome-card">
-              <h2>🎉 Login Successful!</h2>
-              <p>You have successfully logged into the PhD Research Tracking System.</p>
-              
-              <div className="user-details">
-                <h3>Your Profile Information:</h3>
-                <div className="detail-grid">
-                  <div className="detail-item">
-                    <strong>Name:</strong> {userProfile?.firstName} {userProfile?.lastName}
-                  </div>
-                  <div className="detail-item">
-                    <strong>Email:</strong> {userProfile?.email}
-                  </div>
-                  <div className="detail-item">
-                    <strong>Role:</strong> {userProfile?.role}
-                  </div>
-                  <div className="detail-item">
-                    <strong>User ID:</strong> {userProfile?.id}
-                  </div>
-                </div>
+          <div className="hidden md:block">
+            <div className="text-right">
+              <div className="text-sm opacity-90">Current Stage</div>
+              <div className="text-xl font-semibold">
+                {getWorkflowStageDisplayName(dashboardData.workflowStatus?.current_stage || 'supervision_consent')}
               </div>
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Forms Section */}
-          <div className="dashboard-sections">
-            <div className="section-card">
-              <h3>📋 Research Forms</h3>
-              <p>Access and complete your research tracking forms with auto-filled data from your profile.</p>
-              <div className="feature-list">
-                <div className="feature-item">
-                  <strong>PHDEE02-A Form</strong>
-                  <p style={{ margin: '0.5rem 0 1rem 0', fontSize: '0.9rem', color: '#6c757d' }}>
-                    Research project registration and tracking form
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Total Submissions"
+          value={formSubmissions.length}
+          description="All time submissions"
+          color="blue"
+          icon="📄"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Pending Approvals"
+          value={formSubmissions.filter(f => f.status === 'submitted' || f.admin_approval_status === 'pending').length}
+          description="Awaiting review"
+          color="yellow"
+          icon="⏳"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Approved Forms"
+          value={formSubmissions.filter(f => f.status === 'approved').length}
+          description="Successfully approved"
+          color="green"
+          icon="✅"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Unread Notifications"
+          value={dashboardData.unreadNotifications || 0}
+          description="Check your updates"
+          color="purple"
+          icon="🔔"
+          onClick={() => handleNavigation('notifications')}
+        />
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <QuickAction
+            title="Submit New Form"
+            description="Start a new form submission"
+            onClick={() => handleNavigation('forms')}
+            color="blue"
+          />
+          <QuickAction
+            title="View Progress"
+            description="Check your PhD timeline"
+            onClick={() => handleNavigation('workflow')}
+            color="green"
+          />
+          <QuickAction
+            title="Check Notifications"
+            description="Review your updates"
+            onClick={() => handleNavigation('notifications')}
+            color="purple"
+          />
+        </div>
+      </div>
+
+      {/* Recent Submissions */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Submissions</h3>
+          <button 
+            onClick={() => handleNavigation('forms')}
+            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+          >
+            View All
+          </button>
+        </div>
+        
+        {formSubmissions.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 text-4xl mb-4">📋</div>
+            <p className="text-gray-500">No submissions yet</p>
+            <p className="text-sm text-gray-400 mt-1">Get started by submitting your first form</p>
+            <button
+              onClick={() => handleNavigation('forms')}
+              className="mt-4 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
+            >
+              Submit First Form
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {formSubmissions.slice(0, 5).map((submission) => (
+              <div key={submission.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900">{submission.form_name}</h4>
+                  <p className="text-sm text-gray-500">
+                    Submitted on {formatDate(submission.submitted_at)}
                   </p>
+                </div>
+                <div className="flex items-center space-x-3">
+                  <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
+                    {submission.status}
+                  </span>
                   <button 
-                    onClick={() => setCurrentView('phdee02a')}
-                    className="action-btn primary"
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
+                    onClick={() => handleNavigation('forms')}
+                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
                   >
-                    Open Form
+                    View
                   </button>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
+        )}
+      </div>
 
-          {/* Form Submissions Section */}
-          <div className="dashboard-sections">
-            <div className="section-card">
-              <h3>📄 Your Form Submissions</h3>
-              <p>Track the status of your submitted forms and supervisor approvals.</p>
-              
-              {formSubmissions.length === 0 ? (
-                <div style={{ 
-                  padding: '2rem',
-                  textAlign: 'center',
-                  color: '#6c757d',
-                  fontStyle: 'italic'
-                }}>
-                  No form submissions yet. Start by filling out the PHDEE02-A form above.
-                </div>
-              ) : (
-                <div className="submissions-list">
-                  {formSubmissions.map((submission) => (
-                    <div key={submission.id} className="submission-item" style={{
-                      border: '1px solid #dee2e6',
-                      borderRadius: '8px',
-                      padding: '1.5rem',
-                      margin: '1rem 0',
-                      background: 'white'
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div>
-                          <h4 style={{ margin: '0 0 0.5rem 0', color: '#000' }}>
-                            {submission.form_type} Form
-                          </h4>
-                          <p style={{ margin: '0', fontSize: '0.9rem', color: '#6c757d' }}>
-                            Submitted on {new Date(submission.submitted_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                        
-                        <span className={`status-badge ${
-                          submission.supervisor_approval_status === 'approved' ? 'approved' :
-                          submission.supervisor_approval_status === 'rejected' ? 'rejected' : 'pending'
-                        }`} style={{
-                          padding: '0.25rem 0.75rem',
-                          borderRadius: '12px',
-                          fontSize: '0.8rem',
-                          fontWeight: '500',
-                          background: submission.supervisor_approval_status === 'approved' ? '#d4edda' :
-                                     submission.supervisor_approval_status === 'rejected' ? '#f8d7da' : '#fff3cd',
-                          color: submission.supervisor_approval_status === 'approved' ? '#155724' :
-                                submission.supervisor_approval_status === 'rejected' ? '#721c24' : '#856404'
-                        }}>
-                          {submission.supervisor_approval_status === 'approved' && '✓ Approved'}
-                          {submission.supervisor_approval_status === 'rejected' && '✗ Rejected'}
-                          {submission.supervisor_approval_status === 'pending' && '⏳ Pending Approval'}
-                        </span>
-                      </div>
-                      
-                      <div style={{ marginBottom: '1rem' }}>
-                        <p style={{ margin: '0.25rem 0', fontSize: '0.9rem' }}>
-                          <strong>Project:</strong> {submission.form_data.projectTitle}
-                        </p>
-                        <p style={{ margin: '0.25rem 0', fontSize: '0.9rem' }}>
-                          <strong>Supervisor:</strong> {submission.form_data.supervisorName}
-                        </p>
-                        
-                        {submission.supervisor_approval_status === 'approved' && submission.supervisor_approved_at && (
-                          <p style={{ margin: '0.25rem 0', fontSize: '0.9rem', color: '#28a745' }}>
-                            <strong>Approved on:</strong> {new Date(submission.supervisor_approved_at).toLocaleDateString()}
-                          </p>
-                        )}
-                        
-                        {submission.supervisor_approval_status === 'pending' && (
-                          <p style={{ 
-                            margin: '0.5rem 0',
-                            fontSize: '0.85rem',
-                            color: '#856404',
-                            fontStyle: 'italic',
-                            padding: '0.5rem',
-                            background: '#fff3cd',
-                            borderRadius: '4px'
-                          }}>
-                            Waiting for supervisor to fill and approve the consent form.
-                          </p>
-                        )}
-                      </div>
-                      
-                      <button 
-                        onClick={() => handleViewForm(submission)}
-                        className="action-btn secondary"
-                        style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}
-                      >
-                        View Form & Status
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* Workflow Progress */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Current Progress</h3>
+          <button
+            onClick={() => handleNavigation('workflow')}
+            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+          >
+            View Timeline
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">PhD Journey</span>
+            <span className="text-sm text-gray-500">
+              {dashboardData.workflowStatus?.semester || 1} Semester, {dashboardData.workflowStatus?.academic_year || '2024-2025'}
+            </span>
           </div>
-
-          {/* Role-specific sections */}
-          <div className="dashboard-sections">
-            {userProfile?.role === 'student' && (
-              <div className="section-card">
-                <h3>📚 Student Dashboard</h3>
-                <p>Track your PhD research progress, manage tasks, and communicate with your supervisor.</p>
-                <div className="feature-list">
-                  <div className="feature-item">✅ Research Progress Tracking</div>
-                  <div className="feature-item">📋 Task Management</div>
-                  <div className="feature-item">📊 Progress Reports</div>
-                  <div className="feature-item">💬 Supervisor Communication</div>
-                </div>
-              </div>
-            )}
-
-            {userProfile?.role === 'supervisor' && (
-              <div className="section-card">
-                <h3>👨‍🏫 Supervisor Dashboard</h3>
-                <p>Monitor your students' progress and manage research supervision activities.</p>
-                <div className="feature-list">
-                  <div className="feature-item">👥 Student Overview</div>
-                  <div className="feature-item">📈 Progress Monitoring</div>
-                  <div className="feature-item">📝 Review Tasks</div>
-                  <div className="feature-item">📅 Meeting Scheduling</div>
-                </div>
-              </div>
-            )}
-
-            {userProfile?.role === 'admin' && (
-              <div className="section-card">
-                <h3>⚙️ Admin Dashboard</h3>
-                <p>Manage users, system settings, and overall platform administration.</p>
-                <div className="feature-list">
-                  <div className="feature-item">👥 User Management</div>
-                  <div className="feature-item">📊 System Analytics</div>
-                  <div className="feature-item">⚙️ Settings Control</div>
-                  <div className="feature-item">🔒 Security Management</div>
-                </div>
-              </div>
-            )}
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: '30%' }}
+            ></div>
           </div>
-
-          {/* Quick Actions */}
-          <div className="quick-actions">
-            <h3>Quick Actions</h3>
-            <div className="action-buttons">
-              <button className="action-btn primary">View Profile</button>
-              <button className="action-btn secondary">Update Settings</button>
-              <button className="action-btn secondary">Help & Support</button>
-            </div>
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Started</span>
+            <span className="font-medium">
+              {getWorkflowStageDisplayName(dashboardData.workflowStatus?.current_stage || 'supervision_consent')}
+            </span>
+            <span>Graduation</span>
           </div>
-        </main>
+        </div>
       </div>
     </div>
   );
