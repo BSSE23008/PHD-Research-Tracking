@@ -140,8 +140,14 @@ function App() {
 
     if (user.role === 'admin') {
       baseItems.push(
-        { id: 'admin', label: 'Admin Panel', icon: null },
-        { id: 'analytics', label: 'Analytics', icon: null }
+        { id: 'overview', label: 'Overview', icon: null },
+        { id: 'analytics', label: 'Analytics', icon: null },
+        { id: 'students', label: 'Students', icon: null },
+        { id: 'users', label: 'User Management', icon: null },
+        { id: 'approvals', label: 'Approvals', icon: null },
+        { id: 'exams', label: 'Exams', icon: null },
+        { id: 'defenses', label: 'Defenses', icon: null },
+        { id: 'logs', label: 'System Logs', icon: null }
       )
     }
 
@@ -158,7 +164,7 @@ function App() {
 
     switch (user.role) {
       case 'admin':
-        return <AdminDashboard user={user} onLogout={handleLogout} />
+        return <AdminDashboard user={user} onLogout={handleLogout} currentView={currentPage} />
       case 'supervisor':
         return <SupervisorDashboard user={user} />
       case 'student':
@@ -184,6 +190,11 @@ function App() {
       )
     }
 
+    // For admin users, handle all admin navigation items
+    if (user.role === 'admin' && ['dashboard', 'overview', 'analytics', 'students', 'users', 'approvals', 'exams', 'defenses', 'logs'].includes(currentPage)) {
+      return <AdminDashboard user={user} onLogout={handleLogout} currentView={currentPage} />
+    }
+
     switch (currentPage) {
       case 'dashboard':
         return getRoleBasedDashboard()
@@ -191,8 +202,6 @@ function App() {
         return user.role === 'student' ? <FormManager user={user} selectedFormCode={selectedFormCode} onFormCodeCleared={() => setSelectedFormCode(null)} /> : getRoleBasedDashboard()
       case 'workflow':
         return user.role === 'student' ? <WorkflowTracker onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} /> : getRoleBasedDashboard()
-      case 'admin':
-        return user.role === 'admin' ? <AdminDashboard user={user} onLogout={handleLogout} /> : getRoleBasedDashboard()
       case 'students':
         return user.role === 'supervisor' ? <SupervisorDashboard user={user} /> : getRoleBasedDashboard()
       case 'notifications': {

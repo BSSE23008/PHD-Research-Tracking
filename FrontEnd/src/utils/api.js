@@ -52,6 +52,22 @@ export const signup = async (userData) => {
   });
 };
 
+// Admin create user (for adding supervisors/GEC members)
+export const createUser = async (userData) => {
+  return apiRequest('/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(userData)
+  });
+};
+
+// Update user status (activate/deactivate)
+export const updateUserStatus = async (userId, isActive) => {
+  return apiRequest(`/admin/users/${userId}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ isActive })
+  });
+};
+
 // Fetch user profile data
 export const fetchUserProfile = async () => {
   return apiRequest('/auth/profile');
@@ -310,54 +326,12 @@ export const markAllNotificationsAsRead = async () => {
 
 // Get admin dashboard overview
 export const getAdminDashboardOverview = async () => {
-  const result = await apiRequest('/admin/dashboard/overview');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data) {
-    return {
-      success: true,
-      data: {
-        total_students: 10,
-        total_supervisors: 5,
-        todays_submissions: 3,
-        pending_approvals: 7,
-        upcoming_exams: 2,
-        upcoming_defenses: 1
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/dashboard/overview');
 };
 
 // Get workflow analytics
 export const getWorkflowAnalytics = async () => {
-  const result = await apiRequest('/admin/analytics/workflow');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data) {
-    return {
-      success: true,
-      data: {
-        stage_distribution: [
-          { stage: 'supervision_consent', count: 3 },
-          { stage: 'gec_formation', count: 2 },
-          { stage: 'comprehensive_exam', count: 2 },
-          { stage: 'thesis_writing', count: 2 },
-          { stage: 'thesis_defense', count: 1 }
-        ],
-        completion_rates: {
-          supervision_consent: 85,
-          gec_formation: 70,
-          comprehensive_exam: 60,
-          thesis_writing: 40,
-          thesis_defense: 20
-        }
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/analytics/workflow');
 };
 
 // Get all students
@@ -370,71 +344,7 @@ export const getAllStudents = async (params = {}) => {
   });
   
   const endpoint = `/admin/students${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const result = await apiRequest(endpoint);
-  
-  // If backend returns empty or no users, provide sample data
-  if (!result.success || !result.data || !result.data.users || result.data.users.length === 0) {
-    return {
-      success: true,
-      data: {
-        users: [
-          {
-            id: 1,
-            first_name: 'John',
-            last_name: 'Doe',
-            email: 'john.doe@university.edu',
-            role: 'student',
-            student_id: 'PHD2024001',
-            enrollment_year: 2024,
-            research_area: 'Machine Learning',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 2,
-            first_name: 'Jane',
-            last_name: 'Smith',
-            email: 'jane.smith@university.edu',
-            role: 'student',
-            student_id: 'PHD2024002',
-            enrollment_year: 2024,
-            research_area: 'Data Science',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 3,
-            first_name: 'Dr. Robert',
-            last_name: 'Johnson',
-            email: 'robert.johnson@university.edu',
-            role: 'supervisor',
-            title: 'Professor',
-            department: 'Computer Science',
-            institution: 'Information Technology University',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 4,
-            first_name: 'Admin',
-            last_name: 'User',
-            email: 'admin@university.edu',
-            role: 'admin',
-            is_active: true,
-            created_at: new Date().toISOString()
-          }
-        ],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 4,
-          pages: 1
-        }
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest(endpoint);
 };
 
 // Get student details
@@ -460,71 +370,7 @@ export const getAllUsers = async (params = {}) => {
   });
   
   const endpoint = `/admin/users${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const result = await apiRequest(endpoint);
-  
-  // If backend returns empty or no users, provide sample data
-  if (!result.success || !result.data || !result.data.users || result.data.users.length === 0) {
-    return {
-      success: true,
-      data: {
-        users: [
-          {
-            id: 1,
-            first_name: 'John',
-            last_name: 'Doe',
-            email: 'john.doe@university.edu',
-            role: 'student',
-            student_id: 'PHD2024001',
-            enrollment_year: 2024,
-            research_area: 'Machine Learning',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 2,
-            first_name: 'Jane',
-            last_name: 'Smith',
-            email: 'jane.smith@university.edu',
-            role: 'student',
-            student_id: 'PHD2024002',
-            enrollment_year: 2024,
-            research_area: 'Data Science',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 3,
-            first_name: 'Dr. Robert',
-            last_name: 'Johnson',
-            email: 'robert.johnson@university.edu',
-            role: 'supervisor',
-            title: 'Professor',
-            department: 'Computer Science',
-            institution: 'Information Technology University',
-            is_active: true,
-            created_at: new Date().toISOString()
-          },
-          {
-            id: 4,
-            first_name: 'Admin',
-            last_name: 'User',
-            email: 'admin@university.edu',
-            role: 'admin',
-            is_active: true,
-            created_at: new Date().toISOString()
-          }
-        ],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 4,
-          pages: 1
-        }
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest(endpoint);
 };
 
 // Get pending approvals
@@ -537,107 +383,22 @@ export const getPendingApprovals = async (params = {}) => {
   });
   
   const endpoint = `/admin/approvals${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
-  const result = await apiRequest(endpoint);
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data || !result.data.approvals) {
-    return {
-      success: true,
-      data: {
-        approvals: [
-          {
-            id: 1,
-            student_name: 'John Doe',
-            student_email: 'john.doe@university.edu',
-            form_name: 'Supervisor Consent Form',
-            submitted_at: new Date().toISOString(),
-            admin_approval_status: 'pending'
-          },
-          {
-            id: 2,
-            student_name: 'Jane Smith',
-            student_email: 'jane.smith@university.edu',
-            form_name: 'GEC Formation Form',
-            submitted_at: new Date().toISOString(),
-            admin_approval_status: 'pending'
-          }
-        ]
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest(endpoint);
 };
 
 // Get comprehensive exams
 export const getComprehensiveExams = async () => {
-  const result = await apiRequest('/admin/exams');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data || !result.data.exams) {
-    return {
-      success: true,
-      data: {
-        exams: [
-          {
-            id: 1,
-            student_name: 'John Doe',
-            student_email: 'john.doe@university.edu',
-            exam_date: new Date().toISOString(),
-            status: 'scheduled',
-            result: 'pending'
-          }
-        ]
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/exams');
 };
 
 // Get thesis defenses
 export const getThesisDefenses = async () => {
-  const result = await apiRequest('/admin/defenses');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data || !result.data.defenses) {
-    return {
-      success: true,
-      data: {
-        defenses: [
-          {
-            id: 1,
-            student_name: 'John Doe',
-            student_email: 'john.doe@university.edu',
-            defense_date: new Date().toISOString(),
-            thesis_title: 'Machine Learning Applications in Healthcare',
-            status: 'scheduled'
-          }
-        ]
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/defenses');
 };
 
 // Get notification stats
 export const getNotificationStats = async () => {
-  const result = await apiRequest('/admin/notifications/stats');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data) {
-    return {
-      success: true,
-      data: {
-        total_notifications: 15,
-        unread_notifications: 5,
-        recent_notifications: 3
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/notifications/stats');
 };
 
 // Get system settings
@@ -647,29 +408,7 @@ export const getSystemSettings = async () => {
 
 // Get system logs
 export const getSystemLogs = async () => {
-  const result = await apiRequest('/admin/logs');
-  
-  // If backend returns empty or no data, provide sample data
-  if (!result.success || !result.data || !result.data.logs) {
-    return {
-      success: true,
-      data: {
-        logs: [
-          {
-            id: 1,
-            timestamp: new Date().toISOString(),
-            user_name: 'John Doe',
-            user_email: 'john.doe@university.edu',
-            action: 'Form Submission',
-            details: 'Submitted Supervisor Consent Form',
-            ip_address: '192.168.1.1'
-          }
-        ]
-      }
-    };
-  }
-  
-  return result;
+  return await apiRequest('/admin/logs');
 };
 
 // ==================== UTILITY FUNCTIONS ====================
