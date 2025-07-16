@@ -42,38 +42,47 @@ INSERT INTO form_types (form_code, form_name, description, workflow_stage, is_ac
 ON CONFLICT (form_code) DO NOTHING;
 
 -- Add sample workflow progress for students
-INSERT INTO student_workflow_progress (student_id, current_stage, semester, academic_year, stage_start_date, is_active, created_at) VALUES
-((SELECT id FROM users WHERE email = 'john.doe@university.edu'), 'supervision_consent', 'Fall', '2024-2025', NOW() - INTERVAL '30 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'jane.smith@university.edu'), 'gec_formation', 'Fall', '2024-2025', NOW() - INTERVAL '60 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 'comprehensive_exam', 'Fall', '2024-2025', NOW() - INTERVAL '90 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'thesis_writing', 'Fall', '2024-2025', NOW() - INTERVAL '120 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'thesis_defense', 'Fall', '2024-2025', NOW() - INTERVAL '150 days', true, NOW())
+INSERT INTO student_workflow_progress (student_id, current_stage, semester, academic_year, stage_start_date, created_at) VALUES
+((SELECT id FROM users WHERE email = 'john.doe@university.edu'), 'supervision_consent', 1, '2024-2025', NOW() - INTERVAL '30 days', NOW()),
+((SELECT id FROM users WHERE email = 'jane.smith@university.edu'), 'gec_formation', 1, '2024-2025', NOW() - INTERVAL '60 days', NOW()),
+((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 'comprehensive_exam', 1, '2024-2025', NOW() - INTERVAL '90 days', NOW()),
+((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'thesis_writing', 1, '2024-2025', NOW() - INTERVAL '120 days', NOW()),
+((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'thesis_defense', 1, '2024-2025', NOW() - INTERVAL '150 days', NOW())
 ON CONFLICT (student_id) DO NOTHING;
 
 -- Add sample form submissions for testing approvals
-INSERT INTO form_submissions (user_id, form_type_id, form_data, status, admin_approval_status, supervisor_approval_status, submitted_at, created_at) VALUES
+INSERT INTO form_submissions (user_id, form_type_id, form_data, status, admin_approval_status, supervisor_approval_status, workflow_stage, submitted_at) VALUES
 ((SELECT id FROM users WHERE email = 'john.doe@university.edu'), 
  (SELECT id FROM form_types WHERE form_code = 'PHDEE02-A'),
  '{"studentName": "John Doe", "studentId": "PHD2024001", "supervisorName": "Dr. Robert Wilson"}',
- 'submitted', 'pending', 'approved', NOW() - INTERVAL '1 day', NOW()),
+ 'submitted', 'pending', 'approved', 'supervision_consent', NOW() - INTERVAL '1 day'),
 ((SELECT id FROM users WHERE email = 'jane.smith@university.edu'), 
  (SELECT id FROM form_types WHERE form_code = 'PHDEE02-C'),
  '{"studentName": "Jane Smith", "studentId": "PHD2024002", "supervisorName": "Dr. Maria Garcia"}',
- 'submitted', 'pending', 'approved', NOW() - INTERVAL '2 days', NOW()),
+ 'submitted', 'pending', 'approved', 'gec_formation', NOW() - INTERVAL '2 days'),
 ((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 
  (SELECT id FROM form_types WHERE form_code = 'PHDEE03'),
  '{"studentName": "Mike Johnson", "studentId": "PHD2023001", "supervisorName": "Dr. Ahmed Hassan"}',
- 'submitted', 'pending', 'approved', NOW() - INTERVAL '3 days', NOW());
+ 'submitted', 'pending', 'approved', 'comprehensive_exam', NOW() - INTERVAL '3 days');
+
+-- Reset GEC committees sequence
+ALTER SEQUENCE gec_committees_id_seq RESTART WITH 1;
+
+-- Add sample GEC committees
+INSERT INTO gec_committees (student_user_id, committee_formed_date, is_active, created_at)
+VALUES
+  ((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), NOW() - INTERVAL '100 days', true, NOW()),
+  ((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), NOW() - INTERVAL '120 days', true, NOW());
 
 -- Add sample comprehensive exams
-INSERT INTO comprehensive_exams (student_id, committee_id, exam_status, exam_date, exam_result, created_at) VALUES
-((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 1, 'scheduled', NOW() + INTERVAL '7 days', NULL, NOW()),
-((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 2, 'completed', NOW() - INTERVAL '30 days', 'pass', NOW());
+INSERT INTO comprehensive_exams (student_user_id, committee_id, exam_status, exam_date, overall_result, created_at) VALUES
+  ((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 1, 'scheduled', NOW() + INTERVAL '7 days', NULL, NOW()),
+  ((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 2, 'completed', NOW() - INTERVAL '30 days', 'pass', NOW());
 
 -- Add sample thesis defenses
-INSERT INTO thesis_defenses (student_id, defense_type, defense_status, scheduled_date, thesis_title, created_at) VALUES
-((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'synopsis', 'scheduled', NOW() + INTERVAL '14 days', 'Advanced Robotics in Healthcare Applications', NOW()),
-((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'final', 'completed', NOW() - INTERVAL '45 days', 'Natural Language Processing for Social Media Analysis', NOW());
+INSERT INTO thesis_defenses (student_user_id, defense_type, defense_status, scheduled_date, created_at) VALUES
+  ((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'synopsis', 'scheduled', NOW() + INTERVAL '14 days', NOW()),
+  ((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'in_house', 'completed', NOW() - INTERVAL '45 days', NOW());
 
 -- Add sample notifications
 INSERT INTO notifications (user_id, title, message, notification_type, is_read, created_at) VALUES

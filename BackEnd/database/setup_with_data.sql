@@ -59,12 +59,12 @@ INSERT INTO form_types (form_code, form_name, description, workflow_stage, is_ac
 ('PHDEE05-A', 'Thesis Defense Request Form', 'Form to request thesis defense', 'thesis_defense', true, NOW());
 
 -- Add sample workflow progress for students
-INSERT INTO student_workflow_progress (student_id, current_stage, semester, academic_year, stage_start_date, is_active, created_at) VALUES
-((SELECT id FROM users WHERE email = 'john.doe@university.edu'), 'supervision_consent', 'Fall', '2024-2025', NOW() - INTERVAL '30 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'jane.smith@university.edu'), 'gec_formation', 'Fall', '2024-2025', NOW() - INTERVAL '60 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 'comprehensive_exam', 'Fall', '2024-2025', NOW() - INTERVAL '90 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'thesis_writing', 'Fall', '2024-2025', NOW() - INTERVAL '120 days', true, NOW()),
-((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'thesis_defense', 'Fall', '2024-2025', NOW() - INTERVAL '150 days', true, NOW());
+INSERT INTO student_workflow_progress (student_id, current_stage, semester, academic_year, stage_start_date, created_at) VALUES
+((SELECT id FROM users WHERE email = 'john.doe@university.edu'), 'supervision_consent', 1, '2024-2025', NOW() - INTERVAL '30 days', NOW()),
+((SELECT id FROM users WHERE email = 'jane.smith@university.edu'), 'gec_formation', 1, '2024-2025', NOW() - INTERVAL '60 days', NOW()),
+((SELECT id FROM users WHERE email = 'mike.johnson@university.edu'), 'comprehensive_exam', 1, '2024-2025', NOW() - INTERVAL '90 days', NOW()),
+((SELECT id FROM users WHERE email = 'sarah.williams@university.edu'), 'thesis_writing', 1, '2024-2025', NOW() - INTERVAL '120 days', NOW()),
+((SELECT id FROM users WHERE email = 'david.brown@university.edu'), 'thesis_defense', 1, '2024-2025', NOW() - INTERVAL '150 days', NOW());
 
 -- Add sample form submissions for testing approvals
 INSERT INTO form_submissions (user_id, form_type_id, form_data, status, admin_approval_status, supervisor_approval_status, submitted_at, created_at) VALUES
