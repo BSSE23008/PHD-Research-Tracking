@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64">
+  <!-- Orange flame background -->
+  <circle cx="50" cy="50" r="48" fill="#F59E0B" stroke="#D97706" stroke-width="2"/>
+  
+  <!-- ITU Text -->
+  <text x="50" y="40" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="white">ITU</text>
+  
+  <!-- Small flame icon on top -->
+  <path d="M50 15 C45 20, 45 25, 50 30 C55 25, 55 20, 50 15 Z" fill="#EF4444"/>
+  
+  <!-- University text -->
+  <text x="50" y="65" text-anchor="middle" font-family="Arial, sans-serif" font-size="6" fill="white">UNIVERSITY</text>
+  <text x="50" y="75" text-anchor="middle" font-family="Arial, sans-serif" font-size="5" fill="white">OF PUNJAB</text>
+</svg> 

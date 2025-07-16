@@ -2,12 +2,20 @@ import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Signup from './components/Signup'
 import Dashboard from './components/Dashboard'
+import SupervisorDashboard from './components/SupervisorDashboard'
+import AdminDashboard from './components/AdminDashboard'
+import FormManager from './components/FormManager'
+import WorkflowTracker from './components/WorkflowTracker'
+import NotificationSystem from './components/NotificationSystem'
+import Navbar from './components/Navbar'
+import { verifyToken } from './utils/api'
 import './App.css'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('dashboard') // 'login', 'signup', 'dashboard'
+  const [currentPage, setCurrentPage] = useState('login')
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [selectedFormCode, setSelectedFormCode] = useState(null)
 
   // Check for existing authentication on app load
   useEffect(() => {
@@ -16,18 +24,9 @@ function App() {
       
       if (token) {
         try {
-          // Verify token with backend
-          const response = await fetch('http://localhost:5000/api/auth/verify-token', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json'
-            }
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            setUser(data.user)
+          const result = await verifyToken()
+          if (result.success) {
+            setUser(result.data.user)
             setCurrentPage('dashboard')
           } else {
             // Token is invalid, remove it
@@ -65,12 +64,12 @@ function App() {
       if (response.ok) {
         // Store token
         if (formData.rememberMe) {
-          localStorage.setItem('token', data.token)
+          localStorage.setItem('token', data.data.token)
         } else {
-          sessionStorage.setItem('token', data.token)
+          sessionStorage.setItem('token', data.data.token)
         }
         
-        setUser(data.user)
+        setUser(data.data.user)
         setCurrentPage('dashboard')
         return { success: true }
       } else {
@@ -97,12 +96,12 @@ function App() {
 
       if (response.ok) {
         // Store token
-        localStorage.setItem('token', data.token)
-        setUser(data.user)
+        localStorage.setItem('token', data.data.token)
+        setUser(data.data.user)
         setCurrentPage('dashboard')
         return { success: true }
       } else {
-        return { success: false, message: data.message, errors: data.errors }
+        return { success: false, message: data.message }
       }
     } catch (error) {
       console.error('Signup error:', error)
@@ -118,72 +117,120 @@ function App() {
     setCurrentPage('login')
   }
 
-  // Show loading screen while checking authentication
+  // Generate navigation items based on user role
+  const getNavigationItems = () => {
+    if (!user) return []
+
+    const baseItems = [
+      { id: 'dashboard', label: 'Dashboard', icon: null }
+    ]
+
+    if (user.role === 'student') {
+      baseItems.push(
+        { id: 'forms', label: 'Forms', icon: null },
+        { id: 'workflow', label: 'Progress', icon: null }
+      )
+    }
+
+    if (user.role === 'supervisor') {
+      baseItems.push(
+        { id: 'students', label: 'My Students', icon: null }
+      )
+    }
+
+    if (user.role === 'admin') {
+      baseItems.push(
+        { id: 'admin', label: 'Admin Panel', icon: null },
+        { id: 'analytics', label: 'Analytics', icon: null }
+      )
+    }
+
+    baseItems.push(
+      { id: 'notifications', label: 'Notifications', icon: null }
+    )
+
+    return baseItems
+  }
+
+  // Enhanced navigation based on user role
+  const getRoleBasedDashboard = () => {
+    if (!user) return null
+
+    switch (user.role) {
+      case 'admin':
+        return <AdminDashboard user={user} onLogout={handleLogout} />
+      case 'supervisor':
+        return <SupervisorDashboard user={user} />
+      case 'student':
+        return <Dashboard user={user} onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} />
+      default:
+        return <Dashboard user={user} onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} />
+    }
+  }
+
+  // Main content router
+  const renderContent = () => {
+    if (!user) {
+      return currentPage === 'signup' ? (
+        <Signup 
+          onSignup={handleSignup} 
+          onSwitchToLogin={() => setCurrentPage('login')} 
+        />
+      ) : (
+        <Login 
+          onLogin={handleLogin} 
+          onSwitchToSignup={() => setCurrentPage('signup')} 
+        />
+      )
+    }
+
+    switch (currentPage) {
+      case 'dashboard':
+        return getRoleBasedDashboard()
+      case 'forms':
+        return user.role === 'student' ? <FormManager user={user} selectedFormCode={selectedFormCode} onFormCodeCleared={() => setSelectedFormCode(null)} /> : getRoleBasedDashboard()
+      case 'workflow':
+        return user.role === 'student' ? <WorkflowTracker onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} /> : getRoleBasedDashboard()
+      case 'admin':
+        return user.role === 'admin' ? <AdminDashboard user={user} onLogout={handleLogout} /> : getRoleBasedDashboard()
+      case 'students':
+        return user.role === 'supervisor' ? <SupervisorDashboard user={user} /> : getRoleBasedDashboard()
+      case 'notifications': {
+        const { NotificationPage } = NotificationSystem({ user })
+        return <NotificationPage />
+      }
+      default:
+        return getRoleBasedDashboard()
+    }
+  }
+
   if (loading) {
     return (
-      <div className="App">
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          height: '100vh',
-          flexDirection: 'column',
-          color: '#6c757d'
-        }}>
-          <div style={{
-            width: '50px',
-            height: '50px',
-            border: '4px solid #f3f3f3',
-            borderTop: '4px solid #B6B09F',
-            borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
-            marginBottom: '1rem'
-          }}></div>
-          <p>Loading...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading application...</p>
         </div>
       </div>
     )
   }
 
-  // Enhanced Login component with API integration
-  const EnhancedLogin = () => (
-    <Login 
-      onSwitchToSignup={() => setCurrentPage('signup')} 
-      onLogin={handleLogin}
-    />
-  )
-
-  // Enhanced Signup component with API integration
-  const EnhancedSignup = () => (
-    <Signup 
-      onSwitchToLogin={() => setCurrentPage('login')} 
-      onSignup={handleSignup}
-    />
-  )
-
-
-   // Mock user data to pass to the Dashboard for styling purposes.
-  // You can change 'role' to 'supervisor' or 'admin' to see different views.
-  const mockUser = {
-    id: 'user_12345',
-    firstName: 'Jane',
-    lastName: 'Doe',
-    email: 'jane.doe@university.edu',
-    role: 'student' // <-- Change to 'supervisor' or 'admin' to test other views
-  };
-
-  
-
   return (
-    <div className="App">
-      {currentPage === 'login' && <EnhancedLogin />}
-      {currentPage === 'signup' && <EnhancedSignup />}
-      {currentPage === 'dashboard' && (
-        <Dashboard 
-          user={mockUser} 
-          onLogout={handleLogout}
-        />
-      )}
+    <div className="min-h-screen bg-gray-50">
+      <Navbar 
+        user={user} 
+        onLogout={handleLogout} 
+        navigationItems={getNavigationItems()}
+        activeView={currentPage}
+        onNavigate={setCurrentPage}
+        notifications={[]}
+        showSearch={false}
+      />
+      <main className="py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {renderContent()}
+        </div>
+      </main>
     </div>
   )
 }
