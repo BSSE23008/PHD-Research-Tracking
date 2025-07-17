@@ -147,10 +147,10 @@ export const getAvailableForms = async () => {
         },
         {
           id: 5,
-          form_code: 'PHDEE05-A',
-          form_name: 'Thesis Defense Request Form',
-          description: 'Form to request thesis defense',
-          workflow_stage: 'thesis_defense',
+          form_code: 'PHDEE-E1',
+          form_name: 'Comprehensive Examination Evaluation Form',
+          description: 'Form to evaluate comprehensive examination',
+          workflow_stage: 'comprehensive_exam_evaluation',
           is_active: true,
           created_at: new Date().toISOString()
         }
