@@ -153,6 +153,42 @@ export const getAvailableForms = async () => {
           workflow_stage: 'comprehensive_exam_evaluation',
           is_active: true,
           created_at: new Date().toISOString()
+        },
+        {
+          id: 6,
+          form_code: 'PHDEE04-A',
+          form_name: 'Synopsis Defense Request Form',
+          description: 'Form to request synopsis defense',
+          workflow_stage: 'synopsis_defense',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        {
+          id: 7,
+          form_code: 'PHDEE04-B',
+          form_name: 'Synopsis Defense Scheduling Form',
+          description: 'Form to schedule synopsis defense',
+          workflow_stage: 'synopsis_defense_scheduling',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 8, 
+          form_code: 'PHDEE-E2-A',
+          form_name: 'Synopsis Defense Evaluation Form',
+          description: 'Form to evaluate synopsis defense',
+          workflow_stage: 'synopsis_defense_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 9, 
+          form_code: 'PHDEE-E2-B',
+          form_name: 'Synopsis Defense Full Committee Report',
+          description: 'Full committee report for synopsis defense',
+          workflow_stage: 'synopsis_defense_full_committee_report',
+          is_active: true,
+          created_at: new Date().toISOString()
         }
       ]
     };

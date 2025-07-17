@@ -17,6 +17,11 @@ import PHDEE02B from './Forms/PHDEE02-B';
 import PHDEE02C from './Forms/PHDEE02-C';
 import PHDEE03 from './Forms/PHDEE03';
 import PHDEE_E1 from './Forms/PHDEE-E1';  
+import PHDEE04A from './Forms/PHDEE04-A';
+import PHDEE04B from './Forms/PHDEE04-B';
+import PHDEE_E2_A from './Forms/PHDEE-E2-A';
+import PHDEE_E2_B from './Forms/PHDEE-E2-B';
+
 
 const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
   const [currentView, setCurrentView] = useState('list'); // 'list', 'form', 'submission'
@@ -163,12 +168,22 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
     loadFormSchema(form.form_code);
   };
 
+  // ********************** Custom Form Components **********************
   const isCustomFormComponent = (formCode) => {
-    const customForms = ['PHDEE02-A', 'PHDEE02-B', 'PHDEE02-C', 'PHDEE03', 'PHDEE-E1'];
+    const customForms = [ 'PHDEE02-A',
+                          'PHDEE02-B',
+                          'PHDEE02-C',
+                          'PHDEE03',
+                          'PHDEE-E1',
+                          'PHDEE04-A',
+                          'PHDEE04-B', 
+                          'PHDEE-E2-A',
+                          'PHDEE-E2-B' ];
+
     return customForms.includes(formCode);
   };
 
-  // Custom Form Renderer
+  // ********************** Custom Form Renderer **********************
   const renderCustomForm = (formCode) => {
     const commonProps = {
       user: user,
@@ -194,6 +209,14 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
         return <PHDEE03 {...commonProps} />;
       case 'PHDEE-E1':
         return <PHDEE_E1 {...commonProps} />;
+      case 'PHDEE04-A':
+        return <PHDEE04A {...commonProps} />;
+      case 'PHDEE04-B':
+        return <PHDEE04B {...commonProps} />;
+      case 'PHDEE-E2-A':
+        return <PHDEE_E2_A {...commonProps} />;
+      case 'PHDEE-E2-B':
+        return <PHDEE_E2_B {...commonProps} />;
       default:
         return null;
     }
