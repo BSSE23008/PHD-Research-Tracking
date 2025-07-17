@@ -1,61 +1,63 @@
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const { Pool } = require('pg');
+const path = require('path');
+const fs = require('fs');
 
-// Load environment variables
-dotenv.config();
+// Import configuration
+const config = require('./config/env');
+const { pool, connectDB } = require('./config/database');
 
 const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5174',
+  origin: config.CLIENT_URL,
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Database connection
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'phd_research_tracking',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-});
+// Initialize database connection
+connectDB();
 
-// Test database connection
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Error connecting to PostgreSQL database:', err.stack);
-  } else {
-    console.log('✅ Connected to PostgreSQL database');
-    release();
-  }
-});
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads/attachments');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve static files for uploads (with proper auth middleware)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Make pool available to routes
 app.locals.db = pool;
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
+const authRoutes = require('./routes/auth');
+const formsRoutes = require('./routes/forms');
+const adminRoutes = require('./routes/admin');
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/forms', formsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
   res.json({ 
     message: 'PhD Research Tracking API is running!', 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: config.NODE_ENV
   });
 });
 
 // Error handling middleware
+// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ 
     message: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? err.message : {}
+    error: config.NODE_ENV === 'development' ? err.message : {}
   });
 });
 
@@ -64,12 +66,10 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS enabled for: ${process.env.CLIENT_URL || 'http://localhost:5174'}`);
+app.listen(config.PORT, () => {
+  console.log(`🚀 Server running on port ${config.PORT}`);
+  console.log(`📊 Environment: ${config.NODE_ENV}`);
+  console.log(`🌐 CORS enabled for: ${config.CLIENT_URL}`);
 });
 
 module.exports = app; 

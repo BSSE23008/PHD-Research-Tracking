@@ -1,8 +1,75 @@
-/* Dashboard Base Styles */
-.dashboard-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+/* Import a clean, modern font */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+/* --- CSS Variables for Consistent Theming --- */
+:root {
+  /* Colors inspired by professional and calm palettes */
+  --primary-color: #4a5568; /* A deep, calm blue-gray */
+  --primary-hover: #2d3748; /* Darker shade for hover */
+  --secondary-color: #e2e8f0; /* Light gray for secondary elements */
+  --secondary-hover: #cbd5e0; /* Slightly darker gray for hover */
+  --background-color: #f7fafc; /* Very light gray page background */
+  --card-bg-color: #ffffff;
+  --text-color: #2d3748; /* Dark gray for text */
+  --text-light-color: #718096; /* Lighter gray for secondary text */
+  --border-color: #e2e8f0;
+  --success-color: #38a169;
+  --accent-color: #5a67d8; /* An accent color (indigo) */
+  
+  /* Spacing & Borders */
+  --card-border-radius: 12px;
+  --btn-border-radius: 8px;
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* --- Base & Global Styles --- */
+body {
+  background-color: var(--background-color);
+  font-family: 'Poppins', sans-serif;
+  color: var(--text-color);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Loading Spinner --- */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: var(--background-color);
+  color: var(--text-light-color);
+}
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid var(--secondary-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1.5rem;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Header */
+.dashboard-header {
+  background: linear-gradient(135deg, #B6B09F 0%, #000000 100%);
+  color: white;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .dashboard-header {
@@ -121,8 +188,11 @@
 
 /* Main Dashboard Content */
 .dashboard-main {
+  flex: 1;
   padding: 2rem;
-  min-height: calc(100vh - 80px);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .welcome-banner {

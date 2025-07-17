@@ -1,273 +1,131 @@
-import React, { useState, useEffect } from 'react';
-import {
-  FiHome, FiUser, FiLogOut, FiSettings, FiHelpCircle, FiBookOpen,
-  FiBriefcase, FiGrid, FiBarChart2, FiCheckCircle, FiChevronDown, FiBell,
-  FiClock, FiCheck, FiX, FiCircle, FiChevronRight, FiFileText, FiList
-} from 'react-icons/fi';
+import { useState, useEffect } from 'react';
+import { 
+  getDashboardSummary, 
+  getFormSubmissions, 
+  formatDate,
+  getStatusColor,
+  getWorkflowStageDisplayName
+} from '../utils/api';
 
-import './Dashboard.css';
-// import PHDEE03 from './Forms/PHDEE03'; 
-import formComponents  from './Forms'; // Importing form components dynamically
-
-
-// Sample PhD form data structure
-const phdForms = [
-  {
-    id: 'PHDEE01',
-    title: 'PhD Admission Form',
-    description: 'Initial admission and eligibility verification',
-    status: 'completed',
-    dateCompleted: '2024-09-15',
-    isRequired: true,
-    category: 'admission'
-  },
-  {
-    id: 'PHDEE02',
-    title: 'Research Proposal Submission',
-    description: 'Detailed research proposal and methodology',
-    status: 'completed',
-    dateCompleted: '2024-10-20',
-    isRequired: true,
-    category: 'proposal'
-  },
-  {
-    id: 'PHDEE03',
-    title: 'Graduate Examination Committee Formation',
-    description: 'Formation of supervision and examination committee',
-    status: 'in-progress',
-    dateStarted: '2024-11-01',
-    isRequired: true,
-    category: 'committee'
-  },
-  {
-    id: 'PHDEE04',
-    title: 'Coursework Completion Form',
-    description: 'Documentation of completed coursework and grades',
-    status: 'pending',
-    isRequired: true,
-    category: 'coursework'
-  },
-  {
-    id: 'PHDEE05',
-    title: 'Comprehensive Exam Application',
-    description: 'Application for comprehensive examination',
-    status: 'pending',
-    isRequired: true,
-    category: 'examination'
-  },
-  {
-    id: 'PHDEE06',
-    title: 'Thesis Proposal Defense',
-    description: 'Formal defense of thesis proposal',
-    status: 'pending',
-    isRequired: true,
-    category: 'defense'
-  },
-  {
-    id: 'PHDEE07',
-    title: 'Research Progress Report',
-    description: 'Annual progress report submission',
-    status: 'pending',
-    isRequired: true,
-    category: 'progress'
-  },
-  {
-    id: 'PHDEE08',
-    title: 'Thesis Submission Form',
-    description: 'Final thesis submission and format verification',
-    status: 'pending',
-    isRequired: true,
-    category: 'thesis'
-  },
-  {
-    id: 'PHDEE09',
-    title: 'Defense Scheduling Form',
-    description: 'Schedule final thesis defense',
-    status: 'pending',
-    isRequired: true,
-    category: 'defense'
-  },
-  {
-    id: 'PHDEE10',
-    title: 'Graduation Application',
-    description: 'Final graduation application and requirements',
-    status: 'pending',
-    isRequired: true,
-    category: 'graduation'
-  }
-];
-
-// Form component (placeholder for different forms)
-// const FormComponent = ({ formId }) => {
-  
-//   const Component = formId === 'PHDEE03' ? PHDEE03 : () => (
-//     <div className="form-placeholder">
-//       <div className="placeholder-content">
-//         <FiFileText className="placeholder-icon" />
-//         <h3>{formId}</h3>
-//         <p>This form is not yet implemented. Click here to access the form when it becomes available.</p>
-//       </div>
-//     </div>
-//   );
-
-//   return <Component />;
-// };
-
-const FormComponent = ({ formId }) => {
-  const Component = formComponents[formId];
-
-  if (Component) {
-    return <Component />;
-  }
-
-  // Default placeholder if form not found
-  return (
-    <div className="form-placeholder">
-      <div className="placeholder-content">
-        <FiFileText className="placeholder-icon" />
-        <h3>{formId}</h3>
-        <p>This form is not yet implemented.</p>
-      </div>
-    </div>
-  );
-};
-
-// Timeline item component
-const TimelineItem = ({ form, isActive, onClick }) => {
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'completed':
-        return <FiCheck className="timeline-icon completed" />;
-      case 'in-progress':
-        return <FiCircle className="timeline-icon in-progress" />;
-      case 'pending':
-        return <FiCircle className="timeline-icon pending" />;
-      default:
-        return <FiCircle className="timeline-icon" />;
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed':
-        return 'status-completed';
-      case 'in-progress':
-        return 'status-in-progress';
-      case 'pending':
-        return 'status-pending';
-      default:
-        return 'status-default';
-    }
-  };
-
-  return (
-    <div className={`timeline-item ${isActive ? 'active' : ''} ${getStatusColor(form.status)}`} onClick={onClick}>
-      <div className="timeline-marker">
-        {getStatusIcon(form.status)}
-      </div>
-      <div className="timeline-content">
-        <h4 className="timeline-title">{form.id}</h4>
-        <p className="timeline-description">{form.title}</p>
-        <div className="timeline-status">
-          <span className={`status-badge ${form.status}`}>{form.status.replace('-', ' ')}</span>
-          {form.dateCompleted && (
-            <span className="timeline-date">Completed: {new Date(form.dateCompleted).toLocaleDateString()}</span>
-          )}
-          {form.dateStarted && !form.dateCompleted && (
-            <span className="timeline-date">Started: {new Date(form.dateStarted).toLocaleDateString()}</span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Sidebar component
-const Sidebar = ({ isOpen, onClose, activeForm, onFormSelect }) => {
-  const [filter, setFilter] = useState('all');
-  
-  const filteredForms = phdForms.filter(form => {
-    if (filter === 'all') return true;
-    return form.status === filter;
-  });
-
-  const getProgress = () => {
-    const completed = phdForms.filter(form => form.status === 'completed').length;
-    const total = phdForms.length;
-    return { completed, total, percentage: (completed / total) * 100 };
-  };
-
-  const progress = getProgress();
-
-  return (
-    <div className={`sidebar ${isOpen ? 'open' : ''}`}>
-      <div className="sidebar-header">
-        <div className="sidebar-title">
-          <FiList className="sidebar-icon" />
-          <h3>PhD Forms Timeline</h3>
-        </div>
-        <button className="close-btn" onClick={onClose}>
-          <FiX />
-        </button>
-      </div>
-      
-      <div className="progress-section">
-        <h4>Overall Progress</h4>
-        <div className="progress-bar">
-          <div className="progress-fill" style={{ width: `${progress.percentage}%` }}></div>
-        </div>
-        <p>{progress.completed} of {progress.total} forms completed</p>
-      </div>
-
-      <div className="filter-section">
-        <label>Filter by status:</label>
-        <select value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="all">All Forms</option>
-          <option value="completed">Completed</option>
-          <option value="in-progress">In Progress</option>
-          <option value="pending">Pending</option>
-        </select>
-      </div>
-
-      <div className="timeline-container">
-        {filteredForms.map((form) => (
-          <TimelineItem
-            key={form.id}
-            form={form}
-            isActive={activeForm === form.id}
-            onClick={() => onFormSelect(form.id)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const Dashboard = ({ user, onLogout }) => {
+const Dashboard = ({ user, onNavigate, onFormSelect }) => {
   const [loading, setLoading] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeForm, setActiveForm] = useState(null);
+  const [dashboardData, setDashboardData] = useState({
+    workflowStatus: {},
+    recentSubmissions: [],
+    unreadNotifications: 0
+  });
+  const [formSubmissions, setFormSubmissions] = useState([]);
+  const [error, setError] = useState(null);
 
+  // This effect simulates fetching data when the component mounts
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1500);
-    return () => clearTimeout(timer);
+    loadDashboardData();
   }, []);
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [summaryResult, submissionsResult] = await Promise.all([
+        getDashboardSummary(),
+        getFormSubmissions()
+      ]);
+
+      if (summaryResult.success) {
+        setDashboardData(summaryResult.data);
+      }
+
+      if (submissionsResult.success) {
+        setFormSubmissions(submissionsResult.data.submissions || []);
+      }
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+      setError('Failed to load dashboard data. Please refresh the page.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNavigation = (page, formCode = null) => {
+    if (onNavigate) {
+      onNavigate(page);
+    }
+    if (formCode && onFormSelect) {
+      // Small delay to ensure page transition completes
+      setTimeout(() => {
+        onFormSelect(formCode);
+      }, 100);
+    }
+  };
+
+  const StatCard = ({ title, value, description, color = 'blue', icon, onClick }) => (
+    <div 
+      className={`bg-white p-6 rounded-2xl shadow-soft hover:shadow-medium transition-shadow ${onClick ? 'cursor-pointer' : ''}`}
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-600">{title}</p>
+          <p className={`text-2xl font-bold text-${color}-600 mt-1`}>{value}</p>
+          {description && (
+            <p className="text-sm text-gray-500 mt-1">{description}</p>
+          )}
+        </div>
+        {icon && (
+          <div className={`p-3 rounded-full bg-${color}-100`}>
+            <div className={`w-6 h-6 text-${color}-600`}>{icon}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const QuickAction = ({ title, description, onClick, color = 'primary' }) => (
+    <button
+      onClick={onClick}
+      className={`p-4 text-left border-2 border-dashed border-${color}-200 rounded-lg hover:border-${color}-300 hover:bg-${color}-50 transition-colors w-full`}
+    >
+      <div className={`text-sm font-medium text-${color}-600`}>{title}</div>
+      <div className="text-xs text-gray-500 mt-1">{description}</div>
+    </button>
+  );
 
   if (loading) {
     return (
-      <div className="loading-container">
-        <div className="loading-spinner"></div>
-        <p>Loading Dashboard...</p>
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your dashboard...</p>
+        </div>
       </div>
     );
   }
 
-  const handleFormSelect = (formId) => {
-    setActiveForm(formId);
-  };
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <div className="ml-3">
+            <h3 className="text-sm font-medium text-red-800">Error</h3>
+            <p className="text-sm text-red-700 mt-1">{error}</p>
+            <button
+              onClick={loadDashboardData}
+              className="mt-2 bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
+  // Helper to render the role-specific card
   const renderRoleDashboard = () => {
     const roleFeatures = {
       student: [
@@ -311,87 +169,170 @@ const Dashboard = ({ user, onLogout }) => {
   };
 
   return (
-    <div className="dashboard-container">
-      <header className="dashboard-header">
-        <div className="header-brand">
-          <FiHome />
-          <h1>PhD Tracker</h1>
-        </div>
-        <div className="header-user-menu">
-          <button className="icon-btn" onClick={() => setSidebarOpen(true)}>
-            <FiList />
-          </button>
-          <button className="icon-btn">
-            <FiBell />
-          </button>
-          <div className="user-profile">
-            <img src={`https://i.pravatar.cc/40?u=${user.id}`} alt="User Avatar" className="avatar" />
-            <div className="user-details">
-              <span className="user-name">{user?.firstName} {user?.lastName}</span>
-              <span className="user-role">{user?.role}</span>
-            </div>
-            <FiChevronDown />
+    <div className="space-y-8">
+      {/* Welcome Section */}
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Welcome back, {user.first_name}!</h1>
+            <p className="text-primary-100 mt-1">Track your PhD journey and manage your submissions</p>
           </div>
-          <button onClick={onLogout} className="btn btn-logout">
-            <FiLogOut />
-            <span>Logout</span>
+          <div className="hidden md:block">
+            <div className="text-right">
+              <div className="text-sm opacity-90">Current Stage</div>
+              <div className="text-xl font-semibold">
+                {getWorkflowStageDisplayName(dashboardData.workflowStatus?.current_stage || 'supervision_consent')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard
+          title="Total Submissions"
+          value={formSubmissions.length}
+          description="All time submissions"
+          color="blue"
+          icon="📄"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Pending Approvals"
+          value={formSubmissions.filter(f => f.status === 'submitted' || f.admin_approval_status === 'pending').length}
+          description="Awaiting review"
+          color="yellow"
+          icon="⏳"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Approved Forms"
+          value={formSubmissions.filter(f => f.status === 'approved').length}
+          description="Successfully approved"
+          color="green"
+          icon="✅"
+          onClick={() => handleNavigation('forms')}
+        />
+        <StatCard
+          title="Unread Notifications"
+          value={dashboardData.unreadNotifications || 0}
+          description="Check your updates"
+          color="purple"
+          icon="🔔"
+          onClick={() => handleNavigation('notifications')}
+        />
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <QuickAction
+            title="Submit New Form"
+            description="Start a new form submission"
+            onClick={() => handleNavigation('forms')}
+            color="blue"
+          />
+          <QuickAction
+            title="View Progress"
+            description="Check your PhD timeline"
+            onClick={() => handleNavigation('workflow')}
+            color="green"
+          />
+          <QuickAction
+            title="Check Notifications"
+            description="Review your updates"
+            onClick={() => handleNavigation('notifications')}
+            color="purple"
+          />
+        </div>
+      </div>
+
+      {/* Recent Submissions */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Submissions</h3>
+          <button 
+            onClick={() => handleNavigation('forms')}
+            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+          >
+            View All
           </button>
         </div>
-      </header>
-
-      <main className="dashboard-main">
-        {!activeForm ? (
-          <>
-            <div className="welcome-banner">
-              <h2>Welcome back, {user?.firstName}! 👋</h2>
-              <p>You have successfully logged in. Here's your overview for today.</p>
-            </div>
-
-            <div className="dashboard-grid">
-              {renderRoleDashboard()}
-
-              <div className="card quick-actions-card">
-                <div className="card-header">
-                  <FiBarChart2 className="card-icon" />
-                  <h3>Quick Actions</h3>
+        
+        {formSubmissions.length === 0 ? (
+          <div className="text-center py-8">
+            <div className="text-gray-400 text-4xl mb-4">📋</div>
+            <p className="text-gray-500">No submissions yet</p>
+            <p className="text-sm text-gray-400 mt-1">Get started by submitting your first form</p>
+            <button
+              onClick={() => handleNavigation('forms')}
+              className="mt-4 bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
+            >
+              Submit First Form
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {formSubmissions.slice(0, 5).map((submission) => (
+              <div key={submission.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                <div className="flex-1">
+                  <h4 className="font-medium text-gray-900">{submission.form_name}</h4>
+                  <p className="text-sm text-gray-500">
+                    Submitted on {formatDate(submission.submitted_at)}
+                  </p>
                 </div>
-                <p>Access your most used features in one click.</p>
-                <div className="action-buttons">
-                  <button className="btn btn-primary" onClick={() => setSidebarOpen(true)}>
-                    <FiList /> View Forms Timeline
-                  </button>
-                  <button className="btn btn-secondary">
-                    <FiUser /> View Profile
-                  </button>
-                  <button className="btn btn-secondary">
-                    <FiSettings /> Account Settings
-                  </button>
-                  <button className="btn btn-secondary">
-                    <FiHelpCircle /> Help & Support
+                <div className="flex items-center space-x-3">
+                  <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
+                    {submission.status}
+                  </span>
+                  <button 
+                    onClick={() => handleNavigation('forms')}
+                    className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                  >
+                    View
                   </button>
                 </div>
               </div>
-            </div>
-          </>
-        ) : (
-          <div className="form-view">
-            <div className="form-header-nav">
-              <button className="btn btn-secondary" onClick={() => setActiveForm(null)}>
-                ← Back to Dashboard
-              </button>
-              <h2>{activeForm}</h2>
-            </div>
-            <FormComponent formId={activeForm} />
+            ))}
           </div>
         )}
-      </main>
+      </div>
 
-      <Sidebar 
-        isOpen={sidebarOpen} 
-        onClose={() => setSidebarOpen(false)}
-        activeForm={activeForm}
-        onFormSelect={handleFormSelect}
-      />
+      {/* Workflow Progress */}
+      <div className="bg-white rounded-2xl shadow-soft p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Current Progress</h3>
+          <button
+            onClick={() => handleNavigation('workflow')}
+            className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+          >
+            View Timeline
+          </button>
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-gray-700">PhD Journey</span>
+            <span className="text-sm text-gray-500">
+              {dashboardData.workflowStatus?.semester || 1} Semester, {dashboardData.workflowStatus?.academic_year || '2024-2025'}
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div 
+              className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: '30%' }}
+            ></div>
+          </div>
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>Started</span>
+            <span className="font-medium">
+              {getWorkflowStageDisplayName(dashboardData.workflowStatus?.current_stage || 'supervision_consent')}
+            </span>
+            <span>Graduation</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
