@@ -94,8 +94,7 @@ router.get('/logs', AdminController.getSystemLogs);
 router.get('/users', AdminController.getAllUsers);
 router.post('/users', validateSignup, async (req, res) => {
     // Use the existing signup functionality for creating users
-    const authController = new AuthController();
-    await authController.signup(req, res);
+    await AuthController.signup(req, res);
 });
 router.put('/users/:userId/status', AdminController.updateUserStatus);
 

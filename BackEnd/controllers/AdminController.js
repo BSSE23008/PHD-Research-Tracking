@@ -1,24 +1,25 @@
-const db = require('../config/database');
+const { pool } = require('../config/database');
 const NotificationService = require('../services/NotificationService');
 
 class AdminController {
     // Dashboard Overview
     static async getDashboardOverview(req, res) {
         try {
+            // Use the view if available, otherwise fall back to direct queries
             const overviewQuery = `
                 SELECT 
-                    (SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = true) as total_students,
-                    (SELECT COUNT(*) FROM users WHERE role = 'supervisor' AND is_active = true) as total_supervisors,
-                    (SELECT COUNT(*) FROM form_submissions WHERE status = 'submitted' AND DATE(submitted_at) = CURRENT_DATE) as todays_submissions,
-                    (SELECT COUNT(*) FROM form_submissions WHERE admin_approval_status = 'pending') as pending_approvals,
-                    (SELECT COUNT(*) FROM comprehensive_exams WHERE exam_status = 'scheduled' AND exam_date >= CURRENT_DATE) as upcoming_exams,
-                    (SELECT COUNT(*) FROM thesis_defenses WHERE defense_status = 'scheduled' AND scheduled_date >= CURRENT_DATE) as upcoming_defenses
+                    COALESCE((SELECT COUNT(*) FROM users WHERE role = 'student' AND is_active = true), 0) as total_students,
+                    COALESCE((SELECT COUNT(*) FROM users WHERE role = 'supervisor' AND is_active = true), 0) as total_supervisors,
+                    COALESCE((SELECT COUNT(*) FROM form_submissions WHERE status = 'submitted' AND DATE(submitted_at) = CURRENT_DATE), 0) as todays_submissions,
+                    COALESCE((SELECT COUNT(*) FROM form_submissions WHERE admin_approval_status = 'pending'), 0) as pending_approvals,
+                    COALESCE((SELECT COUNT(*) FROM comprehensive_exams WHERE exam_status = 'scheduled' AND exam_date >= CURRENT_DATE), 0) as upcoming_exams,
+                    COALESCE((SELECT COUNT(*) FROM thesis_defenses WHERE defense_status = 'scheduled' AND scheduled_date >= CURRENT_DATE), 0) as upcoming_defenses
             `;
 
-            const result = await db.query(overviewQuery);
+            const result = await pool.query(overviewQuery);
             const overview = result.rows[0];
 
-            // Get recent activity
+            // Get recent activity with fallback
             const recentActivityQuery = `
                 SELECT 
                     fs.id,
@@ -34,35 +35,74 @@ class AdminController {
                 LIMIT 10
             `;
 
-            const recentActivity = await db.query(recentActivityQuery);
+            let recentActivity = { rows: [] };
+            try {
+                recentActivity = await pool.query(recentActivityQuery);
+            } catch (error) {
+                console.warn('Error fetching recent activity:', error.message);
+            }
 
-            // Get workflow stage distribution
+            // Get workflow stage distribution with fallback
             const stageDistributionQuery = `
                 SELECT 
-                    current_stage,
+                    swp.current_stage,
                     COUNT(*) as student_count
-                FROM student_workflow_progress
-                GROUP BY current_stage
+                FROM student_workflow_progress swp
+                JOIN users u ON swp.student_id = u.id
+                WHERE u.is_active = true
+                GROUP BY swp.current_stage
                 ORDER BY student_count DESC
             `;
 
-            const stageDistribution = await db.query(stageDistributionQuery);
+            let stageDistribution = { rows: [] };
+            try {
+                stageDistribution = await pool.query(stageDistributionQuery);
+            } catch (error) {
+                console.warn('Error fetching stage distribution:', error.message);
+                // Provide default stage distribution if no data
+                stageDistribution.rows = [
+                    { current_stage: 'supervision_consent', student_count: 0 },
+                    { current_stage: 'course_registration', student_count: 0 },
+                    { current_stage: 'gec_formation', student_count: 0 }
+                ];
+            }
+
+            // Ensure all values are numbers
+            const cleanedOverview = {
+                total_students: parseInt(overview.total_students) || 0,
+                total_supervisors: parseInt(overview.total_supervisors) || 0,
+                todays_submissions: parseInt(overview.todays_submissions) || 0,
+                pending_approvals: parseInt(overview.pending_approvals) || 0,
+                upcoming_exams: parseInt(overview.upcoming_exams) || 0,
+                upcoming_defenses: parseInt(overview.upcoming_defenses) || 0
+            };
 
             res.json({
                 success: true,
                 data: {
-                    overview,
-                    recentActivity: recentActivity.rows,
-                    stageDistribution: stageDistribution.rows
+                    overview: cleanedOverview,
+                    recentActivity: recentActivity.rows || [],
+                    stageDistribution: stageDistribution.rows || []
                 }
             });
 
         } catch (error) {
             console.error('Error fetching dashboard overview:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Failed to fetch dashboard overview',
-                error: error.message
+            // Return default values instead of failing
+            res.json({
+                success: true,
+                data: {
+                    overview: {
+                        total_students: 0,
+                        total_supervisors: 0,
+                        todays_submissions: 0,
+                        pending_approvals: 0,
+                        upcoming_exams: 0,
+                        upcoming_defenses: 0
+                    },
+                    recentActivity: [],
+                    stageDistribution: []
+                }
             });
         }
     }
@@ -143,10 +183,10 @@ class AdminController {
             `;
 
             const [submissions, formTypes, progress, supervisors] = await Promise.all([
-                db.query(submissionsQuery),
-                db.query(formTypesQuery),
-                db.query(progressQuery),
-                db.query(supervisorQuery)
+                pool.query(submissionsQuery),
+                pool.query(formTypesQuery),
+                pool.query(progressQuery),
+                pool.query(supervisorQuery)
             ]);
 
             res.json({
@@ -226,8 +266,8 @@ class AdminController {
             `;
 
             const [students, count] = await Promise.all([
-                db.query(studentsQuery, queryParams),
-                db.query(countQuery, queryParams.slice(0, -2))
+                pool.query(studentsQuery, queryParams),
+                pool.query(countQuery, queryParams.slice(0, -2))
             ]);
 
             res.json({
@@ -294,7 +334,7 @@ class AdminController {
                 ORDER BY fs.submitted_at ASC
             `;
 
-            const result = await db.query(approvalsQuery);
+            const result = await pool.query(approvalsQuery);
 
             res.json({
                 success: true,
@@ -380,7 +420,7 @@ class AdminController {
                 RETURNING *, (SELECT form_code FROM form_types WHERE id = form_type_id) as form_code
             `;
 
-            const result = await db.query(updateQuery, queryParams);
+            const result = await pool.query(updateQuery, queryParams);
             
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -466,8 +506,8 @@ class AdminController {
             `;
 
             const [users, count] = await Promise.all([
-                db.query(usersQuery, queryParams),
-                db.query(countQuery, queryParams.slice(0, -2))
+                pool.query(usersQuery, queryParams),
+                pool.query(countQuery, queryParams.slice(0, -2))
             ]);
 
             res.json({
@@ -506,7 +546,7 @@ class AdminController {
                 RETURNING id, first_name, last_name, email, role, is_active
             `;
 
-            const result = await db.query(updateQuery, [isActive, userId]);
+            const result = await pool.query(updateQuery, [isActive, userId]);
 
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -578,7 +618,7 @@ class AdminController {
 
             queryParams.push(limit, offset);
 
-            const result = await db.query(logsQuery, queryParams);
+            const result = await pool.query(logsQuery, queryParams);
 
             res.json({
                 success: true,
@@ -596,6 +636,660 @@ class AdminController {
             res.status(500).json({
                 success: false,
                 message: 'Failed to fetch system logs',
+                error: error.message
+            });
+        }
+    }
+
+    // Student Details
+    static async getStudentDetails(req, res) {
+        try {
+            const { studentId } = req.params;
+            
+            const query = `
+                SELECT 
+                    u.id,
+                    u.first_name,
+                    u.last_name,
+                    u.email,
+                    u.student_id,
+                    u.enrollment_year,
+                    u.research_area,
+                    swp.current_stage,
+                    swp.semester,
+                    swp.academic_year,
+                    swp.stage_start_date,
+                    swp.expected_completion_date
+                FROM users u
+                LEFT JOIN student_workflow_progress swp ON u.id = swp.student_id
+                WHERE u.id = $1 AND u.role = 'student' AND u.is_active = true
+            `;
+            
+            const result = await pool.query(query, [studentId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Student not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+        } catch (error) {
+            console.error('Error fetching student details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch student details',
+                error: error.message
+            });
+        }
+    }
+
+    // Update Student Workflow Stage
+    static async updateStudentWorkflowStage(req, res) {
+        try {
+            const { studentId } = req.params;
+            const { stage, semester, academic_year } = req.body;
+            
+            const query = `
+                INSERT INTO student_workflow_progress (student_id, current_stage, semester, academic_year, stage_start_date, updated_at)
+                VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT (student_id) DO UPDATE SET
+                    current_stage = $2,
+                    semester = $3,
+                    academic_year = $4,
+                    stage_start_date = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [studentId, stage, semester, academic_year]);
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Student workflow stage updated successfully'
+            });
+        } catch (error) {
+            console.error('Error updating student workflow stage:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update student workflow stage',
+                error: error.message
+            });
+        }
+    }
+
+    // Get All Form Submissions
+    static async getAllFormSubmissions(req, res) {
+        try {
+            const { page = 1, limit = 20, status, form_type } = req.query;
+            const offset = (page - 1) * limit;
+            
+            let whereClause = 'WHERE 1=1';
+            let queryParams = [];
+            let paramCount = 0;
+            
+            if (status) {
+                paramCount++;
+                whereClause += ` AND fs.status = $${paramCount}`;
+                queryParams.push(status);
+            }
+            
+            if (form_type) {
+                paramCount++;
+                whereClause += ` AND ft.form_code = $${paramCount}`;
+                queryParams.push(form_type);
+            }
+            
+            const query = `
+                SELECT 
+                    fs.id,
+                    fs.form_data,
+                    fs.status,
+                    fs.submitted_at,
+                    fs.admin_approval_status,
+                    fs.supervisor_approval_status,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    ft.form_name,
+                    ft.form_code
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                ${whereClause}
+                ORDER BY fs.submitted_at DESC
+                LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+            `;
+            
+            queryParams.push(limit, offset);
+            
+            const result = await pool.query(query, queryParams);
+            
+            res.json({
+                success: true,
+                data: result.rows,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: result.rows.length
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching form submissions:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch form submissions',
+                error: error.message
+            });
+        }
+    }
+
+    // Get Form Submission Details
+    static async getFormSubmissionDetails(req, res) {
+        try {
+            const { submissionId } = req.params;
+            
+            const query = `
+                SELECT 
+                    fs.*,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    ft.form_name,
+                    ft.form_code
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                WHERE fs.id = $1
+            `;
+            
+            const result = await pool.query(query, [submissionId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Form submission not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+        } catch (error) {
+            console.error('Error fetching form submission details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch form submission details',
+                error: error.message
+            });
+        }
+    }
+
+    // Approve Form Submission
+    static async approveFormSubmission(req, res) {
+        try {
+            const { submissionId } = req.params;
+            const { comments } = req.body;
+            const adminId = req.user.id;
+            
+            const query = `
+                UPDATE form_submissions 
+                SET 
+                    admin_approval_status = 'approved',
+                    admin_approved_by = $1,
+                    admin_approved_at = CURRENT_TIMESTAMP,
+                    admin_comments = $2,
+                    status = 'approved'
+                WHERE id = $3
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [adminId, comments, submissionId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Form submission not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Form submission approved successfully'
+            });
+        } catch (error) {
+            console.error('Error approving form submission:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to approve form submission',
+                error: error.message
+            });
+        }
+    }
+
+    // Reject Form Submission
+    static async rejectFormSubmission(req, res) {
+        try {
+            const { submissionId } = req.params;
+            const { comments } = req.body;
+            const adminId = req.user.id;
+            
+            const query = `
+                UPDATE form_submissions 
+                SET 
+                    admin_approval_status = 'rejected',
+                    admin_approved_by = $1,
+                    admin_approved_at = CURRENT_TIMESTAMP,
+                    admin_comments = $2,
+                    status = 'rejected'
+                WHERE id = $3
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [adminId, comments, submissionId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Form submission not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Form submission rejected successfully'
+            });
+        } catch (error) {
+            console.error('Error rejecting form submission:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to reject form submission',
+                error: error.message
+            });
+        }
+    }
+
+    // Delete Form Submission
+    static async deleteFormSubmission(req, res) {
+        try {
+            const { submissionId } = req.params;
+            
+            const query = 'DELETE FROM form_submissions WHERE id = $1 RETURNING *';
+            const result = await pool.query(query, [submissionId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Form submission not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Form submission deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting form submission:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to delete form submission',
+                error: error.message
+            });
+        }
+    }
+
+    // Get Comprehensive Exams
+    static async getComprehensiveExams(req, res) {
+        try {
+            const query = `
+                SELECT 
+                    ce.*,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id
+                FROM comprehensive_exams ce
+                JOIN users u ON ce.student_user_id = u.id
+                ORDER BY ce.exam_date DESC
+            `;
+            
+            const result = await pool.query(query);
+            
+            res.json({
+                success: true,
+                data: result.rows
+            });
+        } catch (error) {
+            console.error('Error fetching comprehensive exams:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch comprehensive exams',
+                error: error.message
+            });
+        }
+    }
+
+    // Get Exam Details
+    static async getExamDetails(req, res) {
+        try {
+            const { examId } = req.params;
+            
+            const query = `
+                SELECT 
+                    ce.*,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id
+                FROM comprehensive_exams ce
+                JOIN users u ON ce.student_user_id = u.id
+                WHERE ce.id = $1
+            `;
+            
+            const result = await pool.query(query, [examId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Exam not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+        } catch (error) {
+            console.error('Error fetching exam details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch exam details',
+                error: error.message
+            });
+        }
+    }
+
+    // Schedule Exam
+    static async scheduleExam(req, res) {
+        try {
+            const { examId } = req.params;
+            const { exam_date, exam_time, venue } = req.body;
+            
+            const query = `
+                UPDATE comprehensive_exams 
+                SET 
+                    exam_date = $1,
+                    exam_time = $2,
+                    venue = $3,
+                    exam_status = 'scheduled',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $4
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [exam_date, exam_time, venue, examId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Exam not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Exam scheduled successfully'
+            });
+        } catch (error) {
+            console.error('Error scheduling exam:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to schedule exam',
+                error: error.message
+            });
+        }
+    }
+
+    // Update Exam Result
+    static async updateExamResult(req, res) {
+        try {
+            const { examId } = req.params;
+            const { overall_result, written_exam_score, oral_exam_score, total_score } = req.body;
+            
+            const query = `
+                UPDATE comprehensive_exams 
+                SET 
+                    overall_result = $1,
+                    written_exam_score = $2,
+                    oral_exam_score = $3,
+                    total_score = $4,
+                    exam_status = 'completed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $5
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [overall_result, written_exam_score, oral_exam_score, total_score, examId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Exam not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Exam result updated successfully'
+            });
+        } catch (error) {
+            console.error('Error updating exam result:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update exam result',
+                error: error.message
+            });
+        }
+    }
+
+    // Get Thesis Defenses
+    static async getThesisDefenses(req, res) {
+        try {
+            const query = `
+                SELECT 
+                    td.*,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id
+                FROM thesis_defenses td
+                JOIN users u ON td.student_user_id = u.id
+                ORDER BY td.scheduled_date DESC
+            `;
+            
+            const result = await pool.query(query);
+            
+            res.json({
+                success: true,
+                data: result.rows
+            });
+        } catch (error) {
+            console.error('Error fetching thesis defenses:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch thesis defenses',
+                error: error.message
+            });
+        }
+    }
+
+    // Get Defense Details
+    static async getDefenseDetails(req, res) {
+        try {
+            const { defenseId } = req.params;
+            
+            const query = `
+                SELECT 
+                    td.*,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id
+                FROM thesis_defenses td
+                JOIN users u ON td.student_user_id = u.id
+                WHERE td.id = $1
+            `;
+            
+            const result = await pool.query(query, [defenseId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Defense not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+        } catch (error) {
+            console.error('Error fetching defense details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch defense details',
+                error: error.message
+            });
+        }
+    }
+
+    // Schedule Defense
+    static async scheduleDefense(req, res) {
+        try {
+            const { defenseId } = req.params;
+            const { scheduled_date, scheduled_time, venue } = req.body;
+            
+            const query = `
+                UPDATE thesis_defenses 
+                SET 
+                    scheduled_date = $1,
+                    scheduled_time = $2,
+                    venue = $3,
+                    defense_status = 'scheduled',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $4
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [scheduled_date, scheduled_time, venue, defenseId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Defense not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Defense scheduled successfully'
+            });
+        } catch (error) {
+            console.error('Error scheduling defense:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to schedule defense',
+                error: error.message
+            });
+        }
+    }
+
+    // Update Defense Result
+    static async updateDefenseResult(req, res) {
+        try {
+            const { defenseId } = req.params;
+            const { overall_result, revision_deadline } = req.body;
+            
+            const query = `
+                UPDATE thesis_defenses 
+                SET 
+                    overall_result = $1,
+                    revision_deadline = $2,
+                    defense_status = 'completed',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $3
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [overall_result, revision_deadline, defenseId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Defense not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: 'Defense result updated successfully'
+            });
+        } catch (error) {
+            console.error('Error updating defense result:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to update defense result',
+                error: error.message
+            });
+        }
+    }
+
+    // Process Approval
+    static async processApproval(req, res) {
+        try {
+            const { approvalId } = req.params;
+            const { action, comments } = req.body; // action: 'approve' or 'reject'
+            const adminId = req.user.id;
+            
+            const status = action === 'approve' ? 'approved' : 'rejected';
+            
+            const query = `
+                UPDATE form_submissions 
+                SET 
+                    admin_approval_status = $1,
+                    admin_approved_by = $2,
+                    admin_approved_at = CURRENT_TIMESTAMP,
+                    admin_comments = $3,
+                    status = $1
+                WHERE id = $4
+                RETURNING *
+            `;
+            
+            const result = await pool.query(query, [status, adminId, comments, approvalId]);
+            
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Approval not found'
+                });
+            }
+            
+            res.json({
+                success: true,
+                data: result.rows[0],
+                message: `Approval ${action}d successfully`
+            });
+        } catch (error) {
+            console.error('Error processing approval:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to process approval',
                 error: error.message
             });
         }

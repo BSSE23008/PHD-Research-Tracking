@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const { pool } = require('../config/database');
 const WorkflowService = require('../services/WorkflowService');
 const NotificationService = require('../services/NotificationService');
 const { sendResponse, sendError } = require('../views/ResponseView');
@@ -17,7 +17,7 @@ class FormController {
                 ORDER BY workflow_stage, form_code
             `;
 
-            const result = await db.query(query);
+            const result = await pool.query(query);
 
             res.json({
                 success: true,
@@ -71,7 +71,7 @@ class FormController {
                 WHERE form_code = $1 AND is_active = true
             `;
 
-            const result = await db.query(query, [formCode]);
+            const result = await pool.query(query, [formCode]);
 
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -122,7 +122,7 @@ class FormController {
             const formTypeQuery = `
                 SELECT id FROM form_types WHERE form_code = $1 AND is_active = true
             `;
-            const formTypeResult = await db.query(formTypeQuery, [formCode]);
+            const formTypeResult = await pool.query(formTypeQuery, [formCode]);
 
             if (formTypeResult.rows.length === 0) {
                 return res.status(404).json({
@@ -146,7 +146,7 @@ class FormController {
                 RETURNING *
             `;
 
-            const result = await db.query(upsertQuery, [
+            const result = await pool.query(upsertQuery, [
                 userId, formTypeId, JSON.stringify(formData), stepNumber || 0, totalSteps || 1
             ]);
 
@@ -179,7 +179,7 @@ class FormController {
                 WHERE fp.user_id = $1 AND ft.form_code = $2
             `;
 
-            const result = await db.query(query, [userId, formCode]);
+            const result = await pool.query(query, [userId, formCode]);
 
             if (result.rows.length === 0) {
                 return res.json({
@@ -231,7 +231,7 @@ class FormController {
             const formTypeQuery = `
                 SELECT * FROM form_types WHERE form_code = $1 AND is_active = true
             `;
-            const formTypeResult = await db.query(formTypeQuery, [formCode]);
+            const formTypeResult = await pool.query(formTypeQuery, [formCode]);
 
             if (formTypeResult.rows.length === 0) {
                 return res.status(404).json({
@@ -261,7 +261,7 @@ class FormController {
                     FROM form_submissions 
                     WHERE user_id = $1 AND form_type_id = $2 AND status NOT IN ('rejected', 'draft')
                 `;
-                const countResult = await db.query(countQuery, [userId, formType.id]);
+                const countResult = await pool.query(countQuery, [userId, formType.id]);
                 
                 if (parseInt(countResult.rows[0].submission_count) >= formType.max_submissions_per_user) {
                     return res.status(400).json({
@@ -283,7 +283,7 @@ class FormController {
             const currentYear = new Date().getFullYear();
             const defaultAcademicYear = academicYear || `${currentYear}-${currentYear + 1}`;
 
-            const result = await db.query(insertQuery, [
+            const result = await pool.query(insertQuery, [
                 userId, 
                 formType.id, 
                 JSON.stringify(formData), 
@@ -297,11 +297,16 @@ class FormController {
             // Handle special form types
             if (formCode === 'PHDEE02-A') {
                 // Supervisor consent form - create supervisor consent record
-                await this.handleSupervisorConsentForm(submission.id, formData);
+                // Add the student's user ID to the form data
+                const formDataWithUserId = {
+                    ...formData,
+                    studentUserId: userId  // Add the student's user ID
+                };
+                await this.handleSupervisorConsentForm(submission.id, formDataWithUserId);
             }
 
             // Clear saved progress
-            await db.query(
+            await pool.query(
                 'DELETE FROM form_progress WHERE user_id = $1 AND form_type_id = $2',
                 [userId, formType.id]
             );
@@ -332,35 +337,72 @@ class FormController {
     // Handle supervisor consent form submission
     static async handleSupervisorConsentForm(submissionId, formData) {
         try {
+            // Get the submission details to get the student's user ID
+            const submissionQuery = `
+                SELECT fs.user_id, u.first_name, u.last_name, u.email, u.student_id
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                WHERE fs.id = $1
+            `;
+            const submissionResult = await pool.query(submissionQuery, [submissionId]);
+            
+            if (submissionResult.rows.length === 0) {
+                console.error('Form submission not found for ID:', submissionId);
+                return;
+            }
+            
+            const student = submissionResult.rows[0];
+            const studentUserId = student.user_id;
+            
+            // Create a basic consent form record that can be filled by supervisor later
             const insertQuery = `
                 INSERT INTO supervisor_consent_forms (
-                    form_submission_id, supervisor_id, student_id,
+                    form_submission_id, supervisor_id, student_user_id,
                     supervisor_name, supervisor_designation, supervisor_department,
                     area_of_research, contact_no, email, research_topic,
                     hec_approved_supervisor_ref, hec_approval_date,
                     num_existing_phd_students, num_existing_ms_students,
-                    supervision_type, supervisor_consent
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    supervision_type, supervisor_consent, status
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                ON CONFLICT (form_submission_id) DO UPDATE SET
+                    supervisor_id = EXCLUDED.supervisor_id,
+                    supervisor_name = EXCLUDED.supervisor_name,
+                    supervisor_designation = EXCLUDED.supervisor_designation,
+                    supervisor_department = EXCLUDED.supervisor_department,
+                    area_of_research = EXCLUDED.area_of_research,
+                    contact_no = EXCLUDED.contact_no,
+                    email = EXCLUDED.email,
+                    research_topic = EXCLUDED.research_topic,
+                    hec_approved_supervisor_ref = EXCLUDED.hec_approved_supervisor_ref,
+                    hec_approval_date = EXCLUDED.hec_approval_date,
+                    num_existing_phd_students = EXCLUDED.num_existing_phd_students,
+                    num_existing_ms_students = EXCLUDED.num_existing_ms_students,
+                    supervision_type = EXCLUDED.supervision_type,
+                    supervisor_consent = EXCLUDED.supervisor_consent,
+                    status = EXCLUDED.status
             `;
 
-            await db.query(insertQuery, [
+            await pool.query(insertQuery, [
                 submissionId,
-                formData.supervisorId || null,
-                formData.studentId,
-                formData.supervisorName,
-                formData.supervisorDesignation,
-                formData.supervisorDepartment,
-                formData.areaOfResearch,
-                formData.contactNo,
-                formData.email,
-                formData.researchTopic,
-                formData.hecApprovedSupervisorRef,
+                formData.supervisorId || null, // Will be null initially when student submits
+                studentUserId,
+                formData.supervisorName || '',
+                formData.supervisorDesignation || '',
+                formData.supervisorDepartment || '',
+                formData.areaOfResearch || formData.projectDescription || '',
+                formData.contactNo || '',
+                formData.email || '',
+                formData.researchTopic || formData.projectTitle || '',
+                formData.hecApprovedSupervisorRef || '',
                 formData.hecApprovalDate || null,
                 formData.numExistingPhdStudents || 0,
                 formData.numExistingMsStudents || 0,
                 formData.supervisionType || 'main_supervisor',
-                formData.supervisorConsent || false
+                formData.supervisorConsent || false,
+                'pending' // Initial status
             ]);
+
+            console.log(`Created supervisor consent form record for submission ${submissionId}, student ${student.first_name} ${student.last_name}`);
 
         } catch (error) {
             console.error('Error handling supervisor consent form:', error);
@@ -376,7 +418,7 @@ class FormController {
             if (formType.requires_admin_approval) {
                 // Get all admins
                 const adminQuery = `SELECT id FROM users WHERE role = 'admin' AND is_active = true`;
-                const adminResult = await db.query(adminQuery);
+                const adminResult = await pool.query(adminQuery);
                 
                 for (const admin of adminResult.rows) {
                     notifications.push(
@@ -402,7 +444,7 @@ class FormController {
                     WHERE fs.user_id = $1 AND fs.status = 'approved'
                     LIMIT 1
                 `;
-                const supervisorResult = await db.query(supervisorQuery, [submission.user_id]);
+                const supervisorResult = await pool.query(supervisorQuery, [submission.user_id]);
                 
                 if (supervisorResult.rows.length > 0) {
                     notifications.push(
@@ -431,12 +473,24 @@ class FormController {
     static async getSubmissions(req, res) {
         try {
             const userId = req.user.id;
-            const { status, formCode, page = 1, limit = 20 } = req.query;
+            const { status, formCode, page = 1, limit = 20, supervisor_id } = req.query;
             const offset = (page - 1) * limit;
 
-            let whereClause = 'WHERE fs.user_id = $1';
-            let queryParams = [userId];
-            let paramCount = 1;
+            let whereClause = '';
+            let queryParams = [];
+            let paramCount = 0;
+
+            // Handle supervisor requests
+            if (supervisor_id && req.user.role === 'supervisor') {
+                paramCount++;
+                whereClause = `WHERE scf.supervisor_id = $${paramCount}`;
+                queryParams.push(supervisor_id);
+            } else {
+                // Regular user - show their own submissions
+                paramCount++;
+                whereClause = 'WHERE fs.user_id = $1';
+                queryParams.push(userId);
+            }
 
             if (status) {
                 paramCount++;
@@ -450,34 +504,97 @@ class FormController {
                 queryParams.push(formCode);
             }
 
-            const submissionsQuery = `
-                SELECT 
-                    fs.*,
-                    ft.form_code,
-                    ft.form_name,
-                    ft.workflow_stage,
-                    ft.requires_supervisor_approval,
-                    ft.requires_admin_approval,
-                    ft.requires_gec_approval
-                FROM form_submissions fs
-                JOIN form_types ft ON fs.form_type_id = ft.id
-                ${whereClause}
-                ORDER BY fs.submitted_at DESC
-                LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-            `;
+            let submissionsQuery = '';
+            let countQuery = '';
+
+            if (supervisor_id && req.user.role === 'supervisor') {
+                // Supervisor view - show all forms that need supervisor attention
+                // For PHDEE02-A (consent forms), show all pending forms that any supervisor can fill
+                // For other forms, show only forms from students under this supervisor's supervision
+                submissionsQuery = `
+                    SELECT 
+                        fs.*,
+                        ft.form_code,
+                        ft.form_name,
+                        ft.workflow_stage,
+                        ft.requires_supervisor_approval,
+                        ft.requires_admin_approval,
+                        ft.requires_gec_approval,
+                        u.first_name || ' ' || u.last_name as student_name,
+                        u.email as student_email,
+                        u.student_id
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    JOIN users u ON fs.user_id = u.id
+                    WHERE (
+                        -- Show all PHDEE02-A forms that need supervisor approval (any supervisor can fill these)
+                        (ft.form_code = 'PHDEE02-A' AND fs.supervisor_approval_status = 'pending')
+                        OR
+                        -- Show other forms from students under this supervisor's supervision
+                        (ft.form_code != 'PHDEE02-A' AND EXISTS (
+                            SELECT 1 FROM supervisor_consent_forms scf
+                            WHERE scf.supervisor_id = $1 
+                            AND scf.student_user_id = u.id
+                            AND scf.status = 'approved'
+                        ))
+                    )
+                    ${status ? `AND fs.status = '${status}'` : ''}
+                    ${formCode ? `AND ft.form_code = '${formCode}'` : ''}
+                    ORDER BY fs.submitted_at DESC
+                    LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+                `;
+
+                countQuery = `
+                    SELECT COUNT(*) as total
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    JOIN users u ON fs.user_id = u.id
+                    WHERE (
+                        -- Count all PHDEE02-A forms that need supervisor approval
+                        (ft.form_code = 'PHDEE02-A' AND fs.supervisor_approval_status = 'pending')
+                        OR
+                        -- Count other forms from students under this supervisor's supervision
+                        (ft.form_code != 'PHDEE02-A' AND EXISTS (
+                            SELECT 1 FROM supervisor_consent_forms scf
+                            WHERE scf.supervisor_id = $1 
+                            AND scf.student_user_id = u.id
+                            AND scf.status = 'approved'
+                        ))
+                    )
+                    ${status ? `AND fs.status = '${status}'` : ''}
+                    ${formCode ? `AND ft.form_code = '${formCode}'` : ''}
+                `;
+            } else {
+                // Student/Regular user view - get their own submissions
+                submissionsQuery = `
+                    SELECT 
+                        fs.*,
+                        ft.form_code,
+                        ft.form_name,
+                        ft.workflow_stage,
+                        ft.requires_supervisor_approval,
+                        ft.requires_admin_approval,
+                        ft.requires_gec_approval
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    ${whereClause}
+                    ORDER BY fs.submitted_at DESC
+                    LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+                `;
+
+                countQuery = `
+                    SELECT COUNT(*) as total
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    ${whereClause}
+                `;
+            }
 
             queryParams.push(limit, offset);
 
-            const countQuery = `
-                SELECT COUNT(*) as total
-                FROM form_submissions fs
-                JOIN form_types ft ON fs.form_type_id = ft.id
-                ${whereClause}
-            `;
-
             const [submissions, count] = await Promise.all([
-                db.query(submissionsQuery, queryParams),
-                db.query(countQuery, queryParams.slice(0, -2))
+                pool.query(submissionsQuery, queryParams),
+                pool.query(countQuery, queryParams.slice(0, -2))
             ]);
 
             res.json({
@@ -538,7 +655,7 @@ class FormController {
                 ${whereClause}
             `;
 
-            const result = await db.query(query, queryParams);
+            const result = await pool.query(query, queryParams);
 
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -557,7 +674,7 @@ class FormController {
                 ORDER BY uploaded_at DESC
             `;
 
-            const attachments = await db.query(attachmentsQuery, [submissionId]);
+            const attachments = await pool.query(attachmentsQuery, [submissionId]);
             submission.attachments = attachments.rows;
 
             res.json({
@@ -608,8 +725,8 @@ class FormController {
             `;
 
             const [stats, trends] = await Promise.all([
-                db.query(statsQuery),
-                db.query(trendsQuery)
+                pool.query(statsQuery),
+                pool.query(trendsQuery)
             ]);
 
             res.json({
@@ -650,7 +767,7 @@ class FormController {
                     SELECT id FROM form_submissions 
                     WHERE id = $1 AND user_id = $2
                 `;
-                const verifyResult = await db.query(verifyQuery, [submissionId, userId]);
+                const verifyResult = await pool.query(verifyQuery, [submissionId, userId]);
                 
                 if (verifyResult.rows.length === 0) {
                     return res.status(403).json({
@@ -668,7 +785,7 @@ class FormController {
                 RETURNING *
             `;
 
-            const result = await db.query(insertQuery, [
+            const result = await pool.query(insertQuery, [
                 submissionId,
                 req.file.originalname,
                 req.file.path,

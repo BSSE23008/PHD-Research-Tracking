@@ -300,7 +300,7 @@ router.get('/supervisor/pending-approvals', async (req, res) => {
             FROM form_submissions fs
             JOIN users u ON fs.user_id = u.id
             JOIN form_types ft ON fs.form_type_id = ft.id
-            JOIN supervisor_consent_forms scf ON scf.student_id = u.id
+            JOIN supervisor_consent_forms scf ON scf.student_user_id = u.id
             JOIN form_submissions consent_fs ON scf.form_submission_id = consent_fs.id
             WHERE scf.supervisor_id = $1 
             AND fs.supervisor_approval_status = 'pending'
@@ -345,7 +345,7 @@ router.put('/supervisor/approvals/:submissionId', async (req, res) => {
             SELECT fs.id 
             FROM form_submissions fs
             JOIN users u ON fs.user_id = u.id
-            JOIN supervisor_consent_forms scf ON scf.student_id = u.id
+            JOIN supervisor_consent_forms scf ON scf.student_user_id = u.id
             JOIN form_submissions consent_fs ON scf.form_submission_id = consent_fs.id
             WHERE fs.id = $1 AND scf.supervisor_id = $2 AND consent_fs.status = 'approved'
         `;
@@ -368,6 +368,133 @@ router.put('/supervisor/approvals/:submissionId', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Failed to update approval',
+            error: error.message
+        });
+    }
+});
+
+// Supervisor consent form submission route
+router.post('/supervisor/consent', async (req, res) => {
+    try {
+        if (req.user.role !== 'supervisor') {
+            return res.status(403).json({
+                success: false,
+                message: 'Supervisor access required'
+            });
+        }
+
+        const { formSubmissionId, consentData, approved } = req.body;
+        const supervisorId = req.user.id;
+
+        if (!formSubmissionId || !consentData) {
+            return res.status(400).json({
+                success: false,
+                message: 'Form submission ID and consent data are required'
+            });
+        }
+
+        // Verify the supervisor can fill consent for this submission
+        const verifyQuery = `
+            SELECT fs.id, fs.user_id, fs.form_data
+            FROM form_submissions fs
+            JOIN form_types ft ON fs.form_type_id = ft.id
+            WHERE fs.id = $1 AND ft.form_code = 'PHDEE02-A'
+        `;
+
+        const verifyResult = await req.app.locals.db.query(verifyQuery, [formSubmissionId]);
+
+        if (verifyResult.rows.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Form submission not found'
+            });
+        }
+
+        const submission = verifyResult.rows[0];
+        const studentUserId = submission.user_id;
+
+        // Insert or update supervisor consent form
+        const upsertQuery = `
+            INSERT INTO supervisor_consent_forms (
+                form_submission_id, supervisor_id, student_user_id,
+                supervisor_name, supervisor_designation, supervisor_department,
+                area_of_research, contact_no, email, research_topic,
+                hec_approved_supervisor_ref, hec_approval_date,
+                num_existing_phd_students, num_existing_ms_students,
+                supervision_type, supervisor_consent, supervisor_signature_date,
+                status
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            ON CONFLICT (form_submission_id) DO UPDATE SET
+                supervisor_name = EXCLUDED.supervisor_name,
+                supervisor_designation = EXCLUDED.supervisor_designation,
+                supervisor_department = EXCLUDED.supervisor_department,
+                area_of_research = EXCLUDED.area_of_research,
+                contact_no = EXCLUDED.contact_no,
+                email = EXCLUDED.email,
+                research_topic = EXCLUDED.research_topic,
+                hec_approved_supervisor_ref = EXCLUDED.hec_approved_supervisor_ref,
+                hec_approval_date = EXCLUDED.hec_approval_date,
+                num_existing_phd_students = EXCLUDED.num_existing_phd_students,
+                num_existing_ms_students = EXCLUDED.num_existing_ms_students,
+                supervision_type = EXCLUDED.supervision_type,
+                supervisor_consent = EXCLUDED.supervisor_consent,
+                supervisor_signature_date = EXCLUDED.supervisor_signature_date,
+                status = EXCLUDED.status
+            RETURNING *
+        `;
+
+        const consentResult = await req.app.locals.db.query(upsertQuery, [
+            formSubmissionId,
+            supervisorId,
+            studentUserId,
+            consentData.supervisorName,
+            consentData.designation,
+            consentData.supervisorDepartment || '',
+            consentData.areaOfResearch,
+            consentData.contactNumber,
+            consentData.email,
+            consentData.researchTopic || '',
+            consentData.hecApprovedRef,
+            consentData.hecApprovalDate || null,
+            consentData.phdStudentsAsSupervisor || 0,
+            consentData.msStudentsAsSupervisor || 0,
+            consentData.supervisionType || 'main_supervisor',
+            approved,
+            consentData.supervisorSignatureDate,
+            approved ? 'approved' : 'pending'
+        ]);
+
+        // Update the form submission's supervisor approval status
+        const updateSubmissionQuery = `
+            UPDATE form_submissions 
+            SET supervisor_approval_status = $1,
+                supervisor_approved_by = $2,
+                supervisor_approved_at = CURRENT_TIMESTAMP,
+                supervisor_comments = $3
+            WHERE id = $4
+        `;
+
+        await req.app.locals.db.query(updateSubmissionQuery, [
+            approved ? 'approved' : 'rejected',
+            supervisorId,
+            consentData.comments || '',
+            formSubmissionId
+        ]);
+
+        res.json({
+            success: true,
+            message: 'Supervisor consent form submitted successfully',
+            data: {
+                consentForm: consentResult.rows[0],
+                approved: approved
+            }
+        });
+
+    } catch (error) {
+        console.error('Error submitting supervisor consent form:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to submit supervisor consent form',
             error: error.message
         });
     }

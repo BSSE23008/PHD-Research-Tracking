@@ -191,7 +191,50 @@ const AdminDashboard = ({ user, onLogout, currentView = 'overview' }) => {
 
   const handleAddUser = async () => {
     try {
-      const result = await createUser(newUserData);
+      // Validate required fields
+      const requiredFields = ['firstName', 'lastName', 'email', 'password'];
+      const missingFields = requiredFields.filter(field => !newUserData[field] || newUserData[field].trim() === '');
+      
+      if (missingFields.length > 0) {
+        alert(`Please fill in the following required fields: ${missingFields.join(', ')}`);
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(newUserData.email)) {
+        alert('Please enter a valid email address');
+        return;
+      }
+
+      // Validate password strength
+      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(newUserData.password)) {
+        alert('Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character');
+        return;
+      }
+
+      // Set role based on modal type
+      const role = addUserModal.type === 'supervisor' ? 'supervisor' : 'gec_member';
+
+      // Convert camelCase to the format expected by backend
+      const userData = {
+        firstName: newUserData.firstName.trim(),
+        lastName: newUserData.lastName.trim(),
+        email: newUserData.email.toLowerCase().trim(),
+        password: newUserData.password,
+        confirmPassword: newUserData.password, // Add missing confirmPassword field
+        role: role,
+        title: newUserData.title || '',
+        department: newUserData.department || '',
+        institution: newUserData.institution || '',
+        officeLocation: newUserData.officeLocation || '',
+        researchInterests: newUserData.researchInterests || '',
+        maxStudents: addUserModal.type === 'supervisor' ? (newUserData.maxStudents || 5) : undefined,
+        agreeToTerms: 'true' // Add missing agreeToTerms field
+      };
+
+      const result = await createUser(userData);
       if (result.success) {
         setAddUserModal({ show: false, type: 'supervisor' });
         setNewUserData({
@@ -208,12 +251,16 @@ const AdminDashboard = ({ user, onLogout, currentView = 'overview' }) => {
           maxStudents: 5
         });
         loadUsers(); // Refresh users
-        alert(`${newUserData.role} added successfully!`);
+        alert(`${role === 'supervisor' ? 'Supervisor' : 'GEC Member'} added successfully!`);
       } else {
-        alert(`Failed to add ${newUserData.role}: ${result.message}`);
+        // Show more detailed error message
+        const errorMessage = result.message || 'Failed to add user';
+        console.error('Validation errors:', result.errors);
+        alert(`Failed to add ${role === 'supervisor' ? 'supervisor' : 'GEC member'}: ${errorMessage}`);
       }
     } catch (error) {
-      alert(`Error adding ${newUserData.role}: ${error.message}`);
+      console.error('Error adding user:', error);
+      alert(`Error adding ${addUserModal.type === 'supervisor' ? 'supervisor' : 'GEC member'}: ${error.message}`);
     }
   };
 

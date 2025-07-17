@@ -2,7 +2,7 @@
  * NotificationService - Handles notification-related business logic
  */
 
-const db = require('../config/database');
+const { pool } = require('../config/database');
 
 class NotificationService {
     // Create a new notification
@@ -24,7 +24,7 @@ class NotificationService {
                 RETURNING *
             `;
 
-            const result = await db.query(insertQuery, [
+            const result = await pool.query(insertQuery, [
                 userId,
                 title,
                 message,
@@ -51,19 +51,19 @@ class NotificationService {
     } = {}) {
         try {
             const offset = (page - 1) * limit;
-            let whereClause = 'WHERE user_id = $1';
+            let whereClause = 'WHERE n.user_id = $1';
             let queryParams = [userId];
             let paramCount = 1;
 
             if (isRead !== null) {
                 paramCount++;
-                whereClause += ` AND is_read = $${paramCount}`;
+                whereClause += ` AND n.is_read = $${paramCount}`;
                 queryParams.push(isRead);
             }
 
             if (notificationType) {
                 paramCount++;
-                whereClause += ` AND notification_type = $${paramCount}`;
+                whereClause += ` AND n.notification_type = $${paramCount}`;
                 queryParams.push(notificationType);
             }
 
@@ -85,13 +85,13 @@ class NotificationService {
 
             const countQuery = `
                 SELECT COUNT(*) as total
-                FROM notifications 
+                FROM notifications n
                 ${whereClause}
             `;
 
             const [notifications, count] = await Promise.all([
-                db.query(notificationsQuery, queryParams),
-                db.query(countQuery, queryParams.slice(0, -2))
+                pool.query(notificationsQuery, queryParams),
+                pool.query(countQuery, queryParams.slice(0, -2))
             ]);
 
             return {
@@ -120,7 +120,7 @@ class NotificationService {
                 RETURNING *
             `;
 
-            const result = await db.query(updateQuery, [notificationId, userId]);
+            const result = await pool.query(updateQuery, [notificationId, userId]);
             return result.rows[0];
 
         } catch (error) {
@@ -139,7 +139,7 @@ class NotificationService {
                 RETURNING COUNT(*) as updated_count
             `;
 
-            const result = await db.query(updateQuery, [userId]);
+            const result = await pool.query(updateQuery, [userId]);
             return result.rows[0].updated_count;
 
         } catch (error) {
@@ -157,7 +157,7 @@ class NotificationService {
                 RETURNING id
             `;
 
-            const result = await db.query(deleteQuery, [notificationId, userId]);
+            const result = await pool.query(deleteQuery, [notificationId, userId]);
             return result.rows.length > 0;
 
         } catch (error) {
@@ -175,7 +175,7 @@ class NotificationService {
                 WHERE user_id = $1 AND is_read = false
             `;
 
-            const result = await db.query(countQuery, [userId]);
+            const result = await pool.query(countQuery, [userId]);
             return parseInt(result.rows[0].unread_count);
 
         } catch (error) {
@@ -220,7 +220,7 @@ class NotificationService {
                 RETURNING *
             `;
 
-            const result = await db.query(insertQuery, values);
+            const result = await pool.query(insertQuery, values);
             return result.rows;
 
         } catch (error) {
@@ -256,7 +256,7 @@ class NotificationService {
                 )
             `;
 
-            const pendingForms = await db.query(pendingFormsQuery);
+            const pendingForms = await pool.query(pendingFormsQuery);
 
             for (const form of pendingForms.rows) {
                 reminderTasks.push(
@@ -290,7 +290,7 @@ class NotificationService {
                 )
             `;
 
-            const stuckStudents = await db.query(stuckStudentsQuery);
+            const stuckStudents = await pool.query(stuckStudentsQuery);
 
             for (const student of stuckStudents.rows) {
                 reminderTasks.push(
@@ -344,7 +344,7 @@ class NotificationService {
                 )
             `;
 
-            const upcomingExams = await db.query(upcomingExamsQuery);
+            const upcomingExams = await pool.query(upcomingExamsQuery);
 
             for (const exam of upcomingExams.rows) {
                 deadlineNotifications.push(
@@ -380,7 +380,7 @@ class NotificationService {
                 )
             `;
 
-            const upcomingDefenses = await db.query(upcomingDefensesQuery);
+            const upcomingDefenses = await pool.query(upcomingDefensesQuery);
 
             for (const defense of upcomingDefenses.rows) {
                 deadlineNotifications.push(
@@ -418,7 +418,7 @@ class NotificationService {
                 AND action_required = false
             `;
 
-            const result = await db.query(deleteQuery);
+            const result = await pool.query(deleteQuery);
             return result.rowCount;
 
         } catch (error) {
@@ -441,7 +441,7 @@ class NotificationService {
                 GROUP BY notification_type
             `;
 
-            const result = await db.query(statsQuery);
+            const result = await pool.query(statsQuery);
             return result.rows;
 
         } catch (error) {
@@ -466,7 +466,7 @@ class NotificationService {
                 queryParams.push(targetRole);
             }
 
-            const users = await db.query(userQuery, queryParams);
+            const users = await pool.query(userQuery, queryParams);
             
             const notifications = users.rows.map(user => ({
                 userId: user.id,

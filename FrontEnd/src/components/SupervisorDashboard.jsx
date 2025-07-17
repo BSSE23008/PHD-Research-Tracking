@@ -4,10 +4,13 @@ import {
   approveFormSubmission,
   getAllStudents,
   getNotifications,
+  getSubmissionById,
   formatDate,
   getStatusColor,
   getWorkflowStageDisplayName
 } from '../utils/api';
+import { SupervisorConsentForm } from './forms/SupervisorConsentForm';
+import { FormViewer } from './forms/FormViewer';
 
 const SupervisorDashboard = ({ user }) => {
   const [loading, setLoading] = useState(true);
@@ -15,10 +18,12 @@ const SupervisorDashboard = ({ user }) => {
   const [pendingForms, setPendingForms] = useState([]);
   const [allSubmissions, setAllSubmissions] = useState([]);
   const [students, setStudents] = useState([]);
-  const [notifications, setNotifications] = useState([]);
+  const [_notifications, setNotifications] = useState([]);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [showConsentForm, setShowConsentForm] = useState(false);
   const [stats, setStats] = useState({
     totalStudents: 0,
     pendingApprovals: 0,
@@ -31,6 +36,11 @@ const SupervisorDashboard = ({ user }) => {
   useEffect(() => {
     loadDashboardData();
   }, []);
+
+  // Debug state changes
+  useEffect(() => {
+    console.log('State changed - showConsentForm:', showConsentForm, 'selectedSubmission:', selectedSubmission);
+  }, [showConsentForm, selectedSubmission]);
 
   const loadDashboardData = async () => {
     setLoading(true);
@@ -91,6 +101,31 @@ const SupervisorDashboard = ({ user }) => {
       console.error(`Error ${action}ing form:`, error);
       alert(`Error ${action}ing form. Please try again.`);
     }
+  };
+
+  const handleViewDetails = async (submissionId) => {
+    try {
+      console.log('handleViewDetails called with submissionId:', submissionId);
+      const submission = await getSubmissionById(submissionId);
+      if (submission.success) {
+        console.log('Setting selectedSubmission:', submission.data);
+        setSelectedSubmission(submission.data);
+        setShowConsentForm(true);
+        console.log('showConsentForm set to true');
+      } else {
+        alert('Failed to load form details.');
+      }
+    } catch (error) {
+      console.error('Error loading form details:', error);
+      alert('Failed to load form details. Please try again.');
+    }
+  };
+
+  const handleCloseConsentForm = () => {
+    console.log('handleCloseConsentForm called');
+    setShowConsentForm(false);
+    setSelectedSubmission(null);
+    console.log('showConsentForm set to false, selectedSubmission set to null');
   };
 
   const StatCard = ({ title, value, description, color = 'blue', icon, trend }) => (
@@ -343,7 +378,10 @@ const SupervisorDashboard = ({ user }) => {
                           >
                             Reject
                           </button>
-                          <button className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors">
+                          <button
+                            onClick={() => handleViewDetails(form.id)}
+                            className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors"
+                          >
                             View Details
                           </button>
                         </div>
@@ -406,7 +444,10 @@ const SupervisorDashboard = ({ user }) => {
                             <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.supervisor_approval_status)}`}>
                               {submission.supervisor_approval_status}
                             </span>
-                            <button className="text-primary-600 hover:text-primary-700 text-sm font-medium">
+                            <button
+                              onClick={() => handleViewDetails(submission.id)}
+                              className="text-primary-600 hover:text-primary-700 text-sm font-medium"
+                            >
                               View
                             </button>
                           </div>
@@ -453,6 +494,25 @@ const SupervisorDashboard = ({ user }) => {
           )}
         </div>
       </div>
+
+      {showConsentForm && selectedSubmission && (
+        selectedSubmission.form_code === 'PHDEE02-A' ? (
+          <SupervisorConsentForm
+            user={user}
+            formSubmission={selectedSubmission}
+            onClose={handleCloseConsentForm}
+            onSubmissionComplete={() => {
+              handleCloseConsentForm();
+              loadDashboardData();
+            }}
+          />
+        ) : (
+          <FormViewer
+            formSubmission={selectedSubmission}
+            onClose={handleCloseConsentForm}
+          />
+        )
+      )}
     </div>
   );
 };
