@@ -25,6 +25,8 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
     supervisor: '',
     coSupervisor: ''
   });
+  const [submitting, setSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Prefill form fields from user prop
   useEffect(() => {
@@ -56,10 +58,50 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
     }));
   };
 
+  // Simulate form submission (replace with real API call as needed)
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      // Simulate API call delay
+      await new Promise(res => setTimeout(res, 1000));
+      // Simulate success
+      setShowSuccess(true);
+      setTimeout(() => {
+        setShowSuccess(false);
+        if (onSubmissionComplete) onSubmissionComplete(formData);
+      }, 2000);
+    } catch (error) {
+      // Handle error (show error message if needed)
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (showSuccess) {
+    return (
+      <div className="flex flex-col items-center justify-center p-10">
+        <div className="text-green-600 text-5xl mb-4">✓</div>
+        <h3 className="text-2xl font-bold mb-2">Form Submitted Successfully!</h3>
+        <p className="text-lg">Your Committee Member Change Form has been submitted for review.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white">
+    <div className="max-w-4xl mx-auto p-6 bg-white relative">
       {/* Header */}
       <div className="relative text-center mb-6">
+        {/* Close Button */}
+        {onClose && (
+          <button
+            className="absolute left-0 top-0 m-2 text-2xl text-gray-500 hover:text-black focus:outline-none"
+            onClick={onClose}
+            aria-label="Close"
+            type="button"
+          >
+            ×
+          </button>
+        )}
         {/* ITU Logo Placeholder */}
         <div className="logo-placeholder"></div>
         <h1 className="text-lg font-bold mb-2">INFORMATION TECHNOLOGY UNIVERSITY OF THE PUNJAB</h1>
@@ -359,7 +401,26 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
       </div>
 
       {/* Form Footer */}
-      <div className="text-right text-sm mt-8">
+      <div className="flex justify-end items-center mt-8 gap-4">
+        {onClose && (
+          <button
+            type="button"
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="button"
+          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleSubmit}
+          disabled={submitting}
+        >
+          {submitting ? 'Submitting...' : 'Submit Form'}
+        </button>
+      </div>
+      <div className="text-right text-sm mt-4">
         <strong>PhDEE02-C Form</strong>
       </div>
     </div>
