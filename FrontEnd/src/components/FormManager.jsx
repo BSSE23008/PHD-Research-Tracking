@@ -15,6 +15,7 @@ import {
 import { PHDEE02AForm } from './Forms/PHDEE02-A';
 import PHDEE02B from './Forms/PHDEE02-B';
 import PHDEE02C from './Forms/PHDEE02-C';
+import PHDEE03 from './Forms/PHDEE03';
 
 const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
   const [currentView, setCurrentView] = useState('list'); // 'list', 'form', 'submission'
@@ -188,8 +189,8 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
         return <PHDEE02B {...commonProps}/>;
       case 'PHDEE02-C':
         return <PHDEE02C {...commonProps} />;
-      // case 'PHDEE03':
-      //   return <PHDEE03Form {...commonProps} />;
+      case 'PHDEE03':
+        return <PHDEE03 {...commonProps} />;
       // case 'PHDEE-E1':
       //   return <PHDEE_E1Form {...commonProps} />;
       default:

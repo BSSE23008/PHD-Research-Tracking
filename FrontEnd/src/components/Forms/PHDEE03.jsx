@@ -1,30 +1,30 @@
-// FrontEnd/src/components/Forms/PHDEE02-C.jsx
 import React, { useState, useEffect } from 'react';
 import './logo.css';
 
-const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
+const PHDEE03 = ({ user, onClose, onSubmissionComplete }) => {
   const [formData, setFormData] = useState({
     degree: '',
     session: '',
     studentId: '',
     studentName: '',
-    areaOfResearch: '',
+    majorCourses: ['', '', '', ''],
+    minorCourses: ['', '', '', ''],
+    courseworkFinalCGPA: '',
     studentSignature: '',
-    removeMembers: [
-      { signature: '', name: '', dept: '', email: '', contact: '' },
-      { signature: '', name: '', dept: '', email: '', contact: '' }
-    ],
-    addMembers: [
-      { signature: '', name: '', dept: '', email: '', contact: '' },
-      { signature: '', name: '', dept: '', email: '', contact: '' }
-    ],
+    majorExamCourses: ['', '', '', ''],
+    minorExamCourses: ['', '', '', ''],
+    majorFormulatingFaculty: ['', '', '', ''],
+    minorFormulatingFaculty: ['', '', '', ''],
+    majorFormulatingFacultySignature: ['', '', '', ''],
+    minorFormulatingFacultySignature: ['', '', '', ''],
+    majorDateScheduled: ['', '', '', ''],
+    minorDateScheduled: ['', '', '', ''],
     recommended: '',
     remarks: '',
     gradProgramCoordinator: '',
     gradProgramAdvisor: '',
     chairpersonEE: '',
-    supervisor: '',
-    coSupervisor: ''
+    supervisor: ''
   });
   const [submitting, setSubmitting] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -38,7 +38,6 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
         session: user.enrollment_year || prev.enrollment_year || '',
         studentId: user.student_id || user.studentId || prev.studentId || '',
         studentName: (user.first_name && user.last_name) ? `${user.first_name} ${user.last_name}` : prev.studentName || '',
-        areaOfResearch: user.research_area || prev.areaOfResearch || '',
       }));
     }
   }, [user]);
@@ -50,16 +49,14 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
     }));
   };
 
-  const handleMemberChange = (type, index, field, value) => {
+  const handleArrayChange = (field, index, value) => {
     setFormData(prev => ({
       ...prev,
-      [type]: prev[type].map((member, i) => 
-        i === index ? { ...member, [field]: value } : member
-      )
+      [field]: prev[field].map((item, i) => i === index ? value : item)
     }));
   };
 
-  // Simulate form submission (replace with real API call as needed)
+  // Simulate form submission
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
@@ -72,7 +69,7 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
         if (onSubmissionComplete) onSubmissionComplete(formData);
       }, 2000);
     } catch (error) {
-      // Handle error (show error message if needed)
+      // Handle error
     } finally {
       setSubmitting(false);
     }
@@ -83,7 +80,7 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
       <div className="flex flex-col items-center justify-center p-10">
         <div className="text-green-600 text-5xl mb-4">✓</div>
         <h3 className="text-2xl font-bold mb-2">Form Submitted Successfully!</h3>
-        <p className="text-lg">Your Committee Member Change Form has been submitted for review.</p>
+        <p className="text-lg">Your Comprehensive Examination Request has been submitted for review.</p>
       </div>
     );
   }
@@ -106,7 +103,7 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
         {/* ITU Logo Placeholder */}
         <div className="logo-placeholder"></div>
         <h1 className="text-lg font-bold mb-2">INFORMATION TECHNOLOGY UNIVERSITY OF THE PUNJAB</h1>
-        <h2 className="text-base font-bold">PHD COMMITTEE MEMBER CHANGE FORM</h2>
+        <h2 className="text-base font-bold">COMPREHENSIVE EXAMINATION REQUEST FORM</h2>
       </div>
 
       {/* Student Information */}
@@ -115,57 +112,110 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
           <div className="flex-1">
             <label className="inline-block w-20">Degree</label>
             <input
-              type="text"
-              value={"PHD"}
               readOnly
               disabled
-              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+              type="text"
+              value={formData.degree}
+              onChange={(e) => handleInputChange('degree', e.target.value)}
+              className="border-b border-black inline-block w-32 focus:outline-none"
             />
           </div>
           <div className="flex-1">
             <label className="inline-block w-20">Session</label>
             <input
-              type="text"
-              value={formData.session}
               readOnly
               disabled
-              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+              type="text"
+              value={formData.session}
+              onChange={(e) => handleInputChange('session', e.target.value)}
+              className="border-b border-black inline-block w-32 focus:outline-none"
             />
           </div>
           <div className="flex-1">
             <label className="inline-block w-24">Student ID</label>
             <input
-              type="text"
-              value={formData.studentId}
               readOnly
               disabled
-              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+              type="text"
+              value={formData.studentId}
+              onChange={(e) => handleInputChange('studentId', e.target.value)}
+              className="border-b border-black inline-block w-32 focus:outline-none"
             />
           </div>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-6">
           <label className="inline-block w-32">Student Name:</label>
           <input
+            readOnly
+            disabled
             type="text"
             value={formData.studentName}
-            readOnly
-            disabled
-            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+            onChange={(e) => handleInputChange('studentName', e.target.value)}
+            className="border-b border-black inline-block w-96 focus:outline-none"
           />
         </div>
+      </div>
 
-        <div className="mb-4">
-          <label className="inline-block w-32">Area of Research:</label>
+      {/* Courses Section */}
+      <div className="mb-6">
+        <div className="grid grid-cols-2 gap-8">
+          {/* Major Courses */}
+          <div>
+            <h3 className="font-bold mb-4">Major Courses Passed</h3>
+            {formData.majorCourses.map((course, index) => (
+              <div key={index} className="mb-3">
+                <label className="inline-block w-6">{index + 1}.</label>
+                <input
+                  type="text"
+                  value={course}
+                  onChange={(e) => handleArrayChange('majorCourses', index, e.target.value)}
+                  className="border-b border-black inline-block w-64 focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Minor Courses */}
+          <div>
+            <h3 className="font-bold mb-4">Minor Courses Passed</h3>
+            {formData.minorCourses.map((course, index) => (
+              <div key={index} className="mb-3">
+                <label className="inline-block w-6">{index + 1}.</label>
+                <input
+                  type="text"
+                  value={course}
+                  onChange={(e) => handleArrayChange('minorCourses', index, e.target.value)}
+                  className="border-b border-black inline-block w-64 focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-6 mt-6">
+          <label className="inline-block w-40">Coursework Final CGPA</label>
           <input
             type="text"
-            value={formData.areaOfResearch}
-            readOnly
-            disabled
-            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+            value={formData.courseworkFinalCGPA}
+            onChange={(e) => handleInputChange('courseworkFinalCGPA', e.target.value)}
+            className="border-b border-black inline-block w-32 focus:outline-none"
           />
         </div>
+      </div>
 
+      {/* Declaration */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4">Declaration</h3>
+        <div className="mb-2">
+          <span className="inline-block w-6">1.</span>
+          <span>I have read the Comprehensive Examination Policy</span>
+        </div>
+        <div className="mb-4">
+          <span className="inline-block w-6">2.</span>
+          <span>I have completed at least 18 CH coursework with a CGPA of greater than or equal to 3.0</span>
+        </div>
+        
         <div className="mb-6">
           <label className="inline-block w-48">Student Signature with date:</label>
           <input
@@ -177,123 +227,126 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
         </div>
       </div>
 
-      {/* Committee Member Changes */}
+      {/* Exam Details */}
       <div className="mb-6">
-        <h3 className="text-center font-bold mb-4">COMMITTEE MEMBER CHANGES</h3>
-        
         <div className="grid grid-cols-2 gap-8">
-          {/* Remove Column */}
+          {/* Major Exam */}
           <div>
-            <h4 className="font-bold text-center mb-4">Committee Member Remove</h4>
-            {formData.removeMembers.map((member, index) => (
-              <div key={index} className="mb-6 border-b pb-4">
-                <div className="mb-2">
-                  <span className="font-bold">{index + 1}.</span>
-                  <label className="ml-2 inline-block w-20">Signature:</label>
+            <h3 className="font-bold text-center mb-4">Major Exam</h3>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Courses</h4>
+              {formData.majorExamCourses.map((course, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.signature}
-                    onChange={(e) => handleMemberChange('removeMembers', index, 'signature', e.target.value)}
-                    className="border-b border-black inline-block w-32 focus:outline-none"
+                    value={course}
+                    onChange={(e) => handleArrayChange('majorExamCourses', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Name :</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Formulating Faculty</h4>
+              {formData.majorFormulatingFaculty.map((faculty, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.name}
-                    onChange={(e) => handleMemberChange('removeMembers', index, 'name', e.target.value)}
-                    className="border-b border-black inline-block w-48 focus:outline-none"
+                    value={faculty}
+                    onChange={(e) => handleArrayChange('majorFormulatingFaculty', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-32">Dept/Organization:</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Signature</h4>
+              {formData.majorFormulatingFacultySignature.map((signature, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.dept}
-                    onChange={(e) => handleMemberChange('removeMembers', index, 'dept', e.target.value)}
-                    className="border-b border-black inline-block w-40 focus:outline-none"
+                    value={signature}
+                    onChange={(e) => handleArrayChange('majorFormulatingFacultySignature', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Email:</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Date Scheduled</h4>
+              {formData.majorDateScheduled.map((date, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.email}
-                    onChange={(e) => handleMemberChange('removeMembers', index, 'email', e.target.value)}
-                    className="border-b border-black inline-block w-48 focus:outline-none"
+                    value={date}
+                    onChange={(e) => handleArrayChange('majorDateScheduled', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Contact #</label>
-                  <input
-                    type="text"
-                    value={member.contact}
-                    onChange={(e) => handleMemberChange('removeMembers', index, 'contact', e.target.value)}
-                    className="border-b border-black inline-block w-32 focus:outline-none"
-                  />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          {/* Add Column */}
+          {/* Minor Exam */}
           <div>
-            <h4 className="font-bold text-center mb-4">Committee Member Add</h4>
-            {formData.addMembers.map((member, index) => (
-              <div key={index} className="mb-6 border-b pb-4">
-                <div className="mb-2">
-                  <label className="inline-block w-20">Signature:</label>
+            <h3 className="font-bold text-center mb-4">Minor Exam</h3>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Courses</h4>
+              {formData.minorExamCourses.map((course, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.signature}
-                    onChange={(e) => handleMemberChange('addMembers', index, 'signature', e.target.value)}
-                    className="border-b border-black inline-block w-32 focus:outline-none"
+                    value={course}
+                    onChange={(e) => handleArrayChange('minorExamCourses', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Name :</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Formulating Faculty</h4>
+              {formData.minorFormulatingFaculty.map((faculty, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.name}
-                    onChange={(e) => handleMemberChange('addMembers', index, 'name', e.target.value)}
-                    className="border-b border-black inline-block w-48 focus:outline-none"
+                    value={faculty}
+                    onChange={(e) => handleArrayChange('minorFormulatingFaculty', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-32">Dept/Organization:</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Signature</h4>
+              {formData.minorFormulatingFacultySignature.map((signature, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.dept}
-                    onChange={(e) => handleMemberChange('addMembers', index, 'dept', e.target.value)}
-                    className="border-b border-black inline-block w-40 focus:outline-none"
+                    value={signature}
+                    onChange={(e) => handleArrayChange('minorFormulatingFacultySignature', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Email:</label>
+              ))}
+            </div>
+            <div className="mb-4">
+              <h4 className="font-semibold mb-2">Date Scheduled</h4>
+              {formData.minorDateScheduled.map((date, index) => (
+                <div key={index} className="mb-2">
                   <input
                     type="text"
-                    value={member.email}
-                    onChange={(e) => handleMemberChange('addMembers', index, 'email', e.target.value)}
-                    className="border-b border-black inline-block w-48 focus:outline-none"
+                    value={date}
+                    onChange={(e) => handleArrayChange('minorDateScheduled', index, e.target.value)}
+                    className="border-b border-black w-full focus:outline-none"
                   />
                 </div>
-                <div className="mb-2">
-                  <label className="inline-block w-20">Contact #</label>
-                  <input
-                    type="text"
-                    value={member.contact}
-                    onChange={(e) => handleMemberChange('addMembers', index, 'contact', e.target.value)}
-                    className="border-b border-black inline-block w-32 focus:outline-none"
-                  />
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="text-sm mt-4">
-          <strong>Note:</strong> Signatures of those to be deleted and added are required.
+          <strong>Note:</strong> The Supervisor will submit sealed Major and Minor exam folders to Department chair. The department will assign exam location and invigilator.
         </div>
       </div>
 
@@ -343,7 +396,7 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
           <div>
             <div className="mb-6">
               <div className="mb-2">Graduate Program Coordinator</div>
-              <div className="text-sm">(Signature & Date)</div>
+              <div className="text-sm">(Signature & Date Received)</div>
               <input
                 type="text"
                 value={formData.gradProgramCoordinator}
@@ -362,7 +415,9 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
                 className="border-b border-black w-full focus:outline-none mt-2"
               />
             </div>
+          </div>
 
+          <div>
             <div className="mb-6">
               <div className="mb-2">Chairperson EE</div>
               <div className="text-sm">(Signature & Date)</div>
@@ -373,9 +428,7 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
                 className="border-b border-black w-full focus:outline-none mt-2"
               />
             </div>
-          </div>
 
-          <div>
             <div className="mb-6">
               <div className="mb-2">Supervisor</div>
               <div className="text-sm">Supervisor's Signature with date:</div>
@@ -383,17 +436,6 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
                 type="text"
                 value={formData.supervisor}
                 onChange={(e) => handleInputChange('supervisor', e.target.value)}
-                className="border-b border-black w-full focus:outline-none mt-2"
-              />
-            </div>
-
-            <div className="mb-6">
-              <div className="mb-2">Co- Supervisor</div>
-              <div className="text-sm">Co-Supervisor's Signature with date:</div>
-              <input
-                type="text"
-                value={formData.coSupervisor}
-                onChange={(e) => handleInputChange('coSupervisor', e.target.value)}
                 className="border-b border-black w-full focus:outline-none mt-2"
               />
             </div>
@@ -422,10 +464,10 @@ const PHDEE02C = ({ user, onClose, onSubmissionComplete }) => {
         </button>
       </div>
       <div className="text-right text-sm mt-4">
-        <strong>PhDEE02-C Form</strong>
+        <strong>PhDEE03- Form</strong>
       </div>
     </div>
   );
 };
 
-export default PHDEE02C;
+export default PHDEE03;

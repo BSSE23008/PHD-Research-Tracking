@@ -1,0 +1,8 @@
+
+.logo-placeholder { 
+    align-items: center;
+    background-image: url('../../assets/logo.png');
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}

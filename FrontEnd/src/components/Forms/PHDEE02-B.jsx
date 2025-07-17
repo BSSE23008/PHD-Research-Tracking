@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchExtendedUserProfile, getAutoFillData, saveFormProgress, loadFormProgress, submitForm } from '../../utils/api';
 import './PHDEE02-B.css';
+import './logo.css';
 
 const FORM_STEPS = [
   { id: 0, title: 'Student Information', description: 'Basic student and degree information' },
@@ -668,9 +669,7 @@ export const PHDEE02B = ({ onClose, onSubmissionComplete, autoFillData }) => {
         <div className="page-background">
           <div className="form-container">
             <header className="form-header">
-              <div className="logo-container">
-                <div className="logo-placeholder"></div>
-              </div>
+              <div className="logo-placeholder"></div>
               <div className="header-text">
                 <h1>INFORMATION TECHNOLOGY UNIVERSITY OF THE PUNJAB</h1>
                 <h2>PHD GRADUATE EXAMINATION COMMITTEE - FORMATION FORM</h2>

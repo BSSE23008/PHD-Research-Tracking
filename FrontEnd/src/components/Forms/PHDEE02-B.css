@@ -183,6 +183,7 @@ body {
   display: grid;
   grid-template-columns: 100px 1fr 120px;
   align-items: center;
+  justify-content: center;
   gap: 1rem;
   margin-bottom: 2rem;
   text-align: center;
