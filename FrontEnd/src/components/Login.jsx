@@ -43,7 +43,7 @@ const Login = ({ onSwitchToSignup, onLogin }) => {
           <div className="text-center text-white w-full max-w-sm flex flex-col items-center gap-8">
             <div className="text-center">
               <div className="logo-placeholder "></div>
-              <h1 className="text-4xl font-bold mb-4 leading-tight">
+              <h1 className="text-4xl font-bold mb-4 leading-tight text-white">
                 Welcome Back
               </h1>
               <p className="text-base font-normal opacity-90 leading-relaxed">
