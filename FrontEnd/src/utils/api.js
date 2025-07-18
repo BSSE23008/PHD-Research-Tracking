@@ -189,6 +189,51 @@ export const getAvailableForms = async () => {
           workflow_stage: 'synopsis_defense_full_committee_report',
           is_active: true,
           created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 10, 
+          form_code: 'PHDEE04-C',
+          form_name: 'Research Candidacy Form',
+          description: 'Form to request research candidacy',
+          workflow_stage: 'research_candidacy',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 11, 
+          form_code: 'PHDEE-E3',
+          form_name: 'GEC Meeting Minutes For Semester Wise Progress',
+          description: 'Form to record GEC meeting minutes',
+          workflow_stage: 'gec_meeting_minutes',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 12,
+          form_code: 'PHDEE-E4',
+          form_name: 'PHD Thesis Evaluation Form (For External Evaluators)',
+          description: 'Form to evaluate thesis for external evaluators',
+          workflow_stage: 'thesis_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 13,
+          form_code: 'PHDEE05-A',
+          form_name: 'PHD Thesis Defense Scheduling Form (In-House)',
+          description: 'Form to schedule thesis defense',
+          workflow_stage: 'thesis_defense_scheduling',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 14,
+          form_code: 'PHDEE-E5',
+          form_name: 'In-house defense evaluation form',
+          description: 'Form to evaluate thesis defense for in-house evaluators',
+          workflow_stage: 'in_house_defense_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
         }
       ]
     };

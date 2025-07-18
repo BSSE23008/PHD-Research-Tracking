@@ -21,6 +21,11 @@ import PHDEE04A from './Forms/PHDEE04-A';
 import PHDEE04B from './Forms/PHDEE04-B';
 import PHDEE_E2_A from './Forms/PHDEE-E2-A';
 import PHDEE_E2_B from './Forms/PHDEE-E2-B';
+import PHDEE04C from './Forms/PHDEE04-C';
+import PHDEE_E3 from './Forms/PHDEE-E3';
+import PHDEE_E4 from './Forms/PHDEE-E4';
+import PHDEE05A from './Forms/PHDEE05-A';
+import PHDEE_E5 from './Forms/PHDEE-E5';
 
 
 const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
@@ -178,7 +183,12 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
                           'PHDEE04-A',
                           'PHDEE04-B', 
                           'PHDEE-E2-A',
-                          'PHDEE-E2-B' ];
+                          'PHDEE-E2-B', 
+                          'PHDEE04-C',
+                          'PHDEE-E3',
+                          'PHDEE-E4', 
+                          'PHDEE05-A',
+                          'PHDEE-E5' ];
 
     return customForms.includes(formCode);
   };
@@ -217,6 +227,16 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
         return <PHDEE_E2_A {...commonProps} />;
       case 'PHDEE-E2-B':
         return <PHDEE_E2_B {...commonProps} />;
+      case 'PHDEE04-C':
+        return <PHDEE04C {...commonProps} />;
+      case 'PHDEE-E3':
+        return <PHDEE_E3 {...commonProps} />;
+      case 'PHDEE-E4':
+        return <PHDEE_E4 {...commonProps} />;
+      case 'PHDEE05-A':
+        return <PHDEE05A {...commonProps} />;
+      case 'PHDEE-E5':
+        return <PHDEE_E5 {...commonProps} />;
       default:
         return null;
     }
