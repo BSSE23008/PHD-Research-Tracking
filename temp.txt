@@ -1,1 +1,10 @@
 I am Shehroz
+
+netstat -ano | findstr :5000
+Output: 
+    TCP    [::]:5000             [::]:0                 LISTENING       12345
+
+Terminate that process: 
+    taskkill /PID 12345 /F
+
+

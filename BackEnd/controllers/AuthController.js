@@ -84,7 +84,10 @@ class AuthController {
           role: newUser.role,
           department: newUser.department,
           institution: newUser.institution,
-          title: newUser.title
+          title: newUser.title,
+          student_id: newUser.student_id,
+          enrollment_year: newUser.enrollment_year,
+          research_area: newUser.research_area
         }
       }, 201);
 
@@ -139,7 +142,10 @@ class AuthController {
           role: user.role,
           department: user.department,
           institution: user.institution,
-          title: user.title
+          title: user.title,
+          student_id: user.student_id,
+          enrollment_year: user.enrollment_year,
+          research_area: user.research_area
         }
       });
 
@@ -171,7 +177,10 @@ class AuthController {
           role: user.role,
           department: user.department,
           institution: user.institution,
-          title: user.title
+          title: user.title,
+          student_id: user.student_id,
+          enrollment_year: user.enrollment_year,
+          research_area: user.research_area
         }
       });
 
@@ -280,7 +289,10 @@ class AuthController {
           role: user.role,
           department: user.department,
           institution: user.institution,
-          title: user.title
+          title: user.title,
+          student_id: user.student_id,
+          enrollment_year: user.enrollment_year,
+          research_area: user.research_area
         }
       });
 

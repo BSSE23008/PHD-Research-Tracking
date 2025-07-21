@@ -10,7 +10,7 @@ const FORM_STEPS = [
   { id: 3, title: 'Additional Information', description: 'Supplementary details and declarations' }
 ];
 
-export const PHDEE02AForm = ({ onClose, onSubmissionComplete }) => {
+export const PHDEE02AForm = ({ onClose, onSubmissionComplete, autoFillData }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +86,17 @@ export const PHDEE02AForm = ({ onClose, onSubmissionComplete }) => {
 
     initializeForm();
   }, []);
+
+  useEffect(() => {
+    if (autoFillData) {
+      setFormData(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(autoFillData).filter(([key, value]) => value && (!prev[key] || prev[key] === ''))
+        )
+      }));
+    }
+  }, [autoFillData]);
 
   // Save progress automatically when form data changes
   useEffect(() => {

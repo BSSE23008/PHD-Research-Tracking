@@ -17,6 +17,7 @@ const Dashboard = ({ user, onNavigate, onFormSelect }) => {
   const [formSubmissions, setFormSubmissions] = useState([]);
   const [error, setError] = useState(null);
 
+  // This effect simulates fetching data when the component mounts
   useEffect(() => {
     loadDashboardData();
   }, []);
@@ -123,6 +124,49 @@ const Dashboard = ({ user, onNavigate, onFormSelect }) => {
       </div>
     );
   }
+
+  // Helper to render the role-specific card
+  const renderRoleDashboard = () => {
+    const roleFeatures = {
+      student: [
+        "Track Research Progress", "Manage Tasks & Deadlines",
+        "Generate Progress Reports", "Communicate with Supervisor"
+      ],
+      supervisor: [
+        "View All Students", "Monitor Progress",
+        "Review Submissions", "Schedule Meetings"
+      ],
+      admin: [
+        "Manage Users & Roles", "View System Analytics",
+        "Configure Settings", "Oversee Security"
+      ]
+    };
+
+    const roleInfo = {
+      student: { title: "Student Dashboard", icon: <FiBookOpen className="card-icon" /> },
+      supervisor: { title: "Supervisor Dashboard", icon: <FiBriefcase className="card-icon" /> },
+      admin: { title: "Admin Dashboard", icon: <FiGrid className="card-icon" /> }
+    };
+
+    const currentRole = user?.role || 'student';
+    const { title, icon } = roleInfo[currentRole];
+    const features = roleFeatures[currentRole];
+
+    return (
+      <div className="card role-card">
+        <div className="card-header">
+          {icon}
+          <h3>{title}</h3>
+        </div>
+        <p>Here are your primary functions based on your role.</p>
+        <ul className="feature-list">
+          {features.map(feature => (
+            <li key={feature}><FiCheckCircle className="check-icon" /> {feature}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -293,4 +337,4 @@ const Dashboard = ({ user, onNavigate, onFormSelect }) => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;
