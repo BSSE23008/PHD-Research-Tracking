@@ -65,7 +65,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
       ]);
 
       if (availableResult.success) {
-        setAvailableForms(availableResult.data);
+        setAvailableForms(availableResult.data.forms || []);
       }
       if (submissionsResult.success) {
         setSubmissions(submissionsResult.data.submissions || []);

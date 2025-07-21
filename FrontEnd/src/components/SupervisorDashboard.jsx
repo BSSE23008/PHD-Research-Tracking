@@ -37,11 +37,6 @@ const SupervisorDashboard = ({ user }) => {
     loadDashboardData();
   }, []);
 
-  // Debug state changes
-  useEffect(() => {
-    console.log('State changed - showConsentForm:', showConsentForm, 'selectedSubmission:', selectedSubmission);
-  }, [showConsentForm, selectedSubmission]);
-
   const loadDashboardData = async () => {
     setLoading(true);
     setError(null);
@@ -105,13 +100,10 @@ const SupervisorDashboard = ({ user }) => {
 
   const handleViewDetails = async (submissionId) => {
     try {
-      console.log('handleViewDetails called with submissionId:', submissionId);
       const submission = await getSubmissionById(submissionId);
       if (submission.success) {
-        console.log('Setting selectedSubmission:', submission.data);
         setSelectedSubmission(submission.data);
         setShowConsentForm(true);
-        console.log('showConsentForm set to true');
       } else {
         alert('Failed to load form details.');
       }
@@ -122,10 +114,8 @@ const SupervisorDashboard = ({ user }) => {
   };
 
   const handleCloseConsentForm = () => {
-    console.log('handleCloseConsentForm called');
     setShowConsentForm(false);
     setSelectedSubmission(null);
-    console.log('showConsentForm set to false, selectedSubmission set to null');
   };
 
   const StatCard = ({ title, value, description, color = 'blue', icon, trend }) => (
