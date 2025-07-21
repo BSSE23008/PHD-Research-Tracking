@@ -64,14 +64,20 @@ const generateToken = (payload) => {
 const verifyToken = (token) => {
   try {
     return jwt.verify(token, process.env.JWT_SECRET);
-  } catch (error) {
+  } catch {
     return null;
   }
+};
+
+// Alias for authorizeRole for consistency
+const requireRole = (...roles) => {
+  return authorizeRole(...roles);
 };
 
 module.exports = {
   authenticateToken,
   authorizeRole,
+  requireRole,
   generateToken,
   verifyToken
 }; 

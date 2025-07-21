@@ -22,32 +22,22 @@ const requireAdmin = (req, res, next) => {
 router.use(authenticateToken, requireAdmin);
 
 // Dashboard routes
-router.get('/dashboard/overview', AdminController.getDashboardOverview);
-router.get('/dashboard/analytics', async (req, res) => {
-    try {
-        const analytics = await WorkflowService.getWorkflowAnalytics();
-        res.json({
-            success: true,
-            data: analytics
-        });
-    } catch (error) {
-        console.error('Error fetching workflow analytics:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Failed to fetch analytics',
-            error: error.message
-        });
-    }
-});
+router.get('/dashboard', AdminController.getDashboard);
 
-// Student management routes
+// Student Management (Admin only)
+router.post('/students', AdminController.addStudent);
 router.get('/students', AdminController.getAllStudents);
-router.get('/students/:studentId', AdminController.getStudentDetails);
-router.put('/students/:studentId/workflow', AdminController.updateStudentWorkflowStage);
+router.get('/students/:id', AdminController.getStudentById);
+router.put('/students/:id', AdminController.updateStudent);
+router.post('/students/assign-supervisor', AdminController.assignSupervisor);
+router.post('/students/update-semester', AdminController.updateStudentSemester);
 
-// Form management routes
-router.get('/forms/submissions', AdminController.getAllFormSubmissions);
-router.get('/forms/submissions/:submissionId', AdminController.getFormSubmissionDetails);
+// Department Management
+router.get('/departments', AdminController.getDepartments);
+router.post('/departments', AdminController.addDepartment);
+
+// Reports
+router.get('/reports/progress', AdminController.getProgressReport);
 router.post('/forms/submissions/:submissionId/approve', AdminController.approveFormSubmission);
 router.post('/forms/submissions/:submissionId/reject', AdminController.rejectFormSubmission);
 router.delete('/forms/submissions/:submissionId', AdminController.deleteFormSubmission);

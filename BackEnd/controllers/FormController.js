@@ -1,7 +1,6 @@
 const { pool } = require('../config/database');
 const WorkflowService = require('../services/WorkflowService');
 const NotificationService = require('../services/NotificationService');
-const { sendResponse, sendError } = require('../views/ResponseView');
 
 class FormController {
     // Get all available form types
@@ -36,22 +35,66 @@ class FormController {
         }
     }
 
-    // Get available forms for current user
+    // Get available forms for current user (enhanced version)
     static async getAvailableForms(req, res) {
         try {
-            const userId = req.user.id;
-            const availableForms = await WorkflowService.getAvailableFormsForStudent(userId);
+            const user_id = req.user.id;
+
+            // Get user's current workflow stage and completed forms
+            const userInfo = await pool.query(`
+                SELECT 
+                    u.current_semester,
+                    swp.current_stage,
+                    ARRAY_AGG(DISTINCT fs.form_type_id) FILTER (WHERE fs.final_approval_status = 'approved') as completed_forms
+                FROM users u
+                LEFT JOIN student_workflow_progress swp ON u.id = swp.student_id
+                LEFT JOIN form_submissions fs ON u.id = fs.user_id
+                WHERE u.id = $1
+                GROUP BY u.id, u.current_semester, swp.current_stage
+            `, [user_id]);
+
+            if (userInfo.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'User not found'
+                });
+            }
+
+            const user = userInfo.rows[0];
+            const currentStage = user.current_stage || 'supervision_consent';
+            const completedFormIds = user.completed_forms || [];
+
+            // Get available forms for current stage
+            const query = `
+                SELECT 
+                    ft.*,
+                    CASE WHEN $1 = ANY(ft.prerequisite_forms) THEN false ELSE true END as prerequisites_met,
+                    CASE WHEN ft.id = ANY($2) THEN true ELSE false END as is_completed,
+                    fp.step_number,
+                    fp.total_steps
+                FROM form_types ft
+                LEFT JOIN form_progress fp ON ft.id = fp.form_type_id AND fp.user_id = $3
+                WHERE ft.is_active = true 
+                AND (ft.workflow_stage = $4 OR ft.workflow_stage = 'course_registration')
+                ORDER BY ft.workflow_stage, ft.form_name
+            `;
+
+            const result = await pool.query(query, [currentStage, completedFormIds, user_id, currentStage]);
 
             res.json({
                 success: true,
-                data: availableForms
+                data: {
+                    current_stage: currentStage,
+                    current_semester: user.current_semester,
+                    available_forms: result.rows
+                }
             });
 
         } catch (error) {
             console.error('Error fetching available forms:', error);
             res.status(500).json({
                 success: false,
-                message: 'Failed to fetch available forms',
+                message: 'Error fetching available forms',
                 error: error.message
             });
         }
@@ -806,6 +849,377 @@ class FormController {
             res.status(500).json({
                 success: false,
                 message: 'Failed to upload attachment',
+                error: error.message
+            });
+        }
+    }
+
+    // Create notifications for form approvers
+    static async createApprovalNotifications(submissionId, formType) {
+        try {
+            const formSubmission = await pool.query(`
+                SELECT fs.*, u.first_name || ' ' || u.last_name as student_name, u.student_id
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                WHERE fs.id = $1
+            `, [submissionId]);
+
+            if (formSubmission.rows.length === 0) return;
+
+            const submission = formSubmission.rows[0];
+            
+            // Create notification for DEC members if required
+            if (formType.requires_dec_approval) {
+                const decMembers = await pool.query(`
+                    SELECT DISTINCT f.id 
+                    FROM faculty f
+                    JOIN faculty_roles fr ON f.id = fr.faculty_id
+                    WHERE fr.role = 'dec_member' AND fr.is_active = true
+                `);
+
+                for (const member of decMembers.rows) {
+                    await pool.query(`
+                        INSERT INTO notifications (recipient_id, recipient_type, title, message, notification_type, related_form_id, action_required, action_url)
+                        VALUES ($1, 'faculty', $2, $3, 'approval_request', $4, true, $5)
+                    `, [
+                        member.id,
+                        'New Form Requires DEC Approval',
+                        `Student ${submission.first_name} ${submission.last_name} (${submission.student_id}) has submitted ${formType.form_name} requiring your approval.`,
+                        submissionId,
+                        `/faculty/approvals/${submissionId}`
+                    ]);
+                }
+            }
+
+            // Create notification for supervisor if required
+            if (formType.requires_supervisor_approval) {
+                const studentInfo = await pool.query(`
+                    SELECT primary_supervisor_id, co_supervisor_id 
+                    FROM users WHERE id = $1
+                `, [submission.user_id]);
+
+                if (studentInfo.rows[0].primary_supervisor_id) {
+                    await pool.query(`
+                        INSERT INTO notifications (recipient_id, recipient_type, title, message, notification_type, related_form_id, action_required, action_url)
+                        VALUES ($1, 'faculty', $2, $3, 'approval_request', $4, true, $5)
+                    `, [
+                        studentInfo.rows[0].primary_supervisor_id,
+                        'New Form Requires Your Approval',
+                        `Your student ${submission.first_name} ${submission.last_name} (${submission.student_id}) has submitted ${formType.form_name} requiring your approval.`,
+                        submissionId,
+                        `/faculty/approvals/${submissionId}`
+                    ]);
+                }
+            }
+
+        } catch (error) {
+            console.error('Error creating approval notifications:', error);
+        }
+    }
+
+    // Get form submission with approval status
+    static async getFormSubmission(req, res) {
+        try {
+            const { id } = req.params;
+            
+            const query = `
+                SELECT 
+                    fs.*,
+                    ft.form_name,
+                    ft.form_code,
+                    ft.requires_dec_approval,
+                    ft.requires_supervisor_approval,
+                    ft.requires_gec_approval,
+                    ft.requires_hod_approval,
+                    ft.requires_chairperson_approval,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.student_id,
+                    d.dept_name as department,
+                    
+                    -- Approver information
+                    f1.first_name || ' ' || f1.last_name as dec_approver,
+                    f2.first_name || ' ' || f2.last_name as supervisor_approver,
+                    f3.first_name || ' ' || f3.last_name as gec_approver,
+                    f4.first_name || ' ' || f4.last_name as hod_approver,
+                    f5.first_name || ' ' || f5.last_name as chairperson_approver
+                    
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN faculty f1 ON fs.dec_approved_by = f1.id
+                LEFT JOIN faculty f2 ON fs.supervisor_approved_by = f2.id
+                LEFT JOIN faculty f3 ON fs.gec_approved_by = f3.id
+                LEFT JOIN faculty f4 ON fs.hod_approved_by = f4.id
+                LEFT JOIN faculty f5 ON fs.chairperson_approved_by = f5.id
+                WHERE fs.id = $1
+            `;
+
+            const result = await pool.query(query, [id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Form submission not found'
+                });
+            }
+
+            const submission = result.rows[0];
+
+            // Calculate overall approval status
+            const approvalStages = [
+                { name: 'DEC', required: submission.requires_dec_approval, status: submission.dec_approval_status, approver: submission.dec_approver, date: submission.dec_approved_at, comments: submission.dec_comments },
+                { name: 'Supervisor', required: submission.requires_supervisor_approval, status: submission.supervisor_approval_status, approver: submission.supervisor_approver, date: submission.supervisor_approved_at, comments: submission.supervisor_comments },
+                { name: 'GEC', required: submission.requires_gec_approval, status: submission.gec_approval_status, approver: submission.gec_approver, date: submission.gec_approved_at, comments: submission.gec_comments },
+                { name: 'HOD', required: submission.requires_hod_approval, status: submission.hod_approval_status, approver: submission.hod_approver, date: submission.hod_approved_at, comments: submission.hod_comments },
+                { name: 'Chairperson', required: submission.requires_chairperson_approval, status: submission.chairperson_approval_status, approver: submission.chairperson_approver, date: submission.chairperson_approved_at, comments: submission.chairperson_comments }
+            ];
+
+            const requiredStages = approvalStages.filter(stage => stage.required);
+            const approvedStages = requiredStages.filter(stage => stage.status === 'approved');
+            const rejectedStages = requiredStages.filter(stage => stage.status === 'rejected');
+
+            let overallStatus = 'pending';
+            if (rejectedStages.length > 0) {
+                overallStatus = 'rejected';
+            } else if (approvedStages.length === requiredStages.length) {
+                overallStatus = 'approved';
+            } else {
+                overallStatus = 'under_review';
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    ...submission,
+                    approval_stages: approvalStages,
+                    overall_status: overallStatus,
+                    progress: {
+                        completed: approvedStages.length,
+                        total: requiredStages.length,
+                        percentage: Math.round((approvedStages.length / requiredStages.length) * 100)
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching form submission:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching form submission',
+                error: error.message
+            });
+        }
+    }
+
+    // Get user's form submissions with approval status
+    static async getUserSubmissions(req, res) {
+        try {
+            const user_id = req.user.id;
+            const { page = 1, limit = 10, status, form_type } = req.query;
+            const offset = (page - 1) * limit;
+
+            let whereClause = 'WHERE fs.user_id = $1';
+            const params = [user_id];
+            let paramCount = 1;
+
+            if (status) {
+                paramCount++;
+                whereClause += ` AND fs.status = $${paramCount}`;
+                params.push(status);
+            }
+
+            if (form_type) {
+                paramCount++;
+                whereClause += ` AND ft.form_code = $${paramCount}`;
+                params.push(form_type);
+            }
+
+            const query = `
+                SELECT 
+                    fs.*,
+                    ft.form_name,
+                    ft.form_code,
+                    ft.requires_dec_approval,
+                    ft.requires_supervisor_approval,
+                    ft.requires_gec_approval,
+                    ft.requires_hod_approval,
+                    ft.requires_chairperson_approval,
+                    
+                    CASE 
+                        WHEN NOT ft.requires_dec_approval OR fs.dec_approval_status = 'approved' THEN 1 ELSE 0 END +
+                        CASE WHEN NOT ft.requires_supervisor_approval OR fs.supervisor_approval_status = 'approved' THEN 1 ELSE 0 END +
+                        CASE WHEN NOT ft.requires_gec_approval OR fs.gec_approval_status = 'approved' THEN 1 ELSE 0 END +
+                        CASE WHEN NOT ft.requires_hod_approval OR fs.hod_approval_status = 'approved' THEN 1 ELSE 0 END +
+                        CASE WHEN NOT ft.requires_chairperson_approval OR fs.chairperson_approval_status = 'approved' THEN 1 ELSE 0 END 
+                    as approvals_completed,
+                    
+                    CASE WHEN ft.requires_dec_approval THEN 1 ELSE 0 END +
+                    CASE WHEN ft.requires_supervisor_approval THEN 1 ELSE 0 END +
+                    CASE WHEN ft.requires_gec_approval THEN 1 ELSE 0 END +
+                    CASE WHEN ft.requires_hod_approval THEN 1 ELSE 0 END +
+                    CASE WHEN ft.requires_chairperson_approval THEN 1 ELSE 0 END 
+                    as total_approvals_required
+
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                ${whereClause}
+                ORDER BY fs.submitted_at DESC
+                LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+            `;
+
+            params.push(limit, offset);
+            const result = await pool.query(query, params);
+
+            // Get total count
+            const countQuery = `
+                SELECT COUNT(*) 
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                ${whereClause}
+            `;
+            const countResult = await pool.query(countQuery, params.slice(0, -2));
+
+            res.json({
+                success: true,
+                data: result.rows,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total: parseInt(countResult.rows[0].count),
+                    pages: Math.ceil(countResult.rows[0].count / limit)
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching user submissions:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching submissions',
+                error: error.message
+            });
+        }
+    }
+
+    // Save form progress (auto-save functionality)
+    static async saveFormProgress(req, res) {
+        try {
+            const { form_type_id, form_data, step_number = 0, total_steps = 1 } = req.body;
+            const user_id = req.user.id;
+
+            // Get auto-populate data
+            const autoPopulateResult = await pool.query(
+                'SELECT get_auto_populate_data($1, $2) as auto_data',
+                [user_id, form_type_id]
+            );
+            
+            const autoData = autoPopulateResult.rows[0].auto_data || {};
+
+            const result = await pool.query(`
+                INSERT INTO form_progress (user_id, form_type_id, form_data, step_number, total_steps, auto_populated_fields)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (user_id, form_type_id) 
+                DO UPDATE SET 
+                    form_data = EXCLUDED.form_data,
+                    step_number = EXCLUDED.step_number,
+                    total_steps = EXCLUDED.total_steps,
+                    auto_populated_fields = EXCLUDED.auto_populated_fields,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+            `, [user_id, form_type_id, JSON.stringify(form_data), step_number, total_steps, JSON.stringify(autoData)]);
+
+            res.json({
+                success: true,
+                message: 'Form progress saved successfully',
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('Error saving form progress:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error saving form progress',
+                error: error.message
+            });
+        }
+    }
+
+    // Get form progress
+    static async getFormProgress(req, res) {
+        try {
+            const { form_type_id } = req.params;
+            const user_id = req.user.id;
+
+            const result = await pool.query(`
+                SELECT fp.*, ft.form_name
+                FROM form_progress fp
+                JOIN form_types ft ON fp.form_type_id = ft.id
+                WHERE fp.user_id = $1 AND fp.form_type_id = $2
+            `, [user_id, form_type_id]);
+
+            if (result.rows.length === 0) {
+                // Get auto-populate data for new form
+                const autoPopulateResult = await pool.query(
+                    'SELECT get_auto_populate_data($1, $2) as auto_data',
+                    [user_id, form_type_id]
+                );
+
+                return res.json({
+                    success: true,
+                    data: {
+                        form_data: {},
+                        auto_populated_fields: autoPopulateResult.rows[0].auto_data || {},
+                        step_number: 0,
+                        total_steps: 1
+                    }
+                });
+            }
+
+            res.json({
+                success: true,
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('Error fetching form progress:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching form progress',
+                error: error.message
+            });
+        }
+    }
+
+
+
+    // Get form approval history
+    static async getFormApprovalHistory(req, res) {
+        try {
+            const { form_submission_id } = req.params;
+
+            const query = `
+                SELECT 
+                    fah.*,
+                    f.first_name || ' ' || f.last_name as approver_name,
+                    f.designation
+                FROM form_approval_history fah
+                LEFT JOIN faculty f ON fah.approved_by = f.id
+                WHERE fah.form_submission_id = $1
+                ORDER BY fah.action_date ASC
+            `;
+
+            const result = await pool.query(query, [form_submission_id]);
+
+            res.json({
+                success: true,
+                data: result.rows
+            });
+
+        } catch (error) {
+            console.error('Error fetching approval history:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching approval history',
                 error: error.message
             });
         }
