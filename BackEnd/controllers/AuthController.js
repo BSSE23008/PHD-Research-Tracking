@@ -15,7 +15,7 @@ class AuthController {
     this.getUsersByRole = this.getUsersByRole.bind(this);
   }
 
-  // Initialize User model with database connection
+  // Get User model instance
   getUserModel(req) {
     return new User(req.app.locals.db);
   }
@@ -49,18 +49,14 @@ class AuthController {
         role: req.body.role,
         // Student fields
         studentId: req.body.studentId,
+        departmentId: req.body.departmentId,
         enrollmentYear: req.body.enrollmentYear,
+        currentSemester: req.body.currentSemester || '1st',
+        academicYear: req.body.academicYear,
         researchArea: req.body.researchArea,
-        advisorEmail: req.body.advisorEmail,
-        // Supervisor fields
-        title: req.body.title,
-        department: req.body.department,
-        institution: req.body.institution,
-        officeLocation: req.body.officeLocation,
-        researchInterests: req.body.researchInterests,
-        maxStudents: req.body.maxStudents,
         // Admin fields
-        adminCode: req.body.adminCode
+        adminCode: req.body.adminCode,
+        adminPermissions: req.body.adminPermissions
       };
 
       // Create user
@@ -73,33 +69,18 @@ class AuthController {
         role: newUser.role
       });
 
+      // Get complete user profile
+      const completeUser = await userModel.findById(newUser.id);
+
       // Send response
-      sendResponse(res, 'User created successfully', {
+      sendResponse(res, 'User registered successfully', {
         token,
-        user: {
-          id: newUser.id,
-          first_name: newUser.first_name,
-          last_name: newUser.last_name,
-          email: newUser.email,
-          role: newUser.role,
-          department: newUser.department,
-          institution: newUser.institution,
-          title: newUser.title,
-          student_id: newUser.student_id,
-          enrollment_year: newUser.enrollment_year,
-          research_area: newUser.research_area
-        }
+        user: this.formatUserResponse(completeUser)
       }, 201);
 
     } catch (error) {
       console.error('Signup error:', error);
-      
-      // Handle database constraint errors
-      if (error.code === '23505') {
-        return sendError(res, 'User with this email already exists', 400);
-      }
-      
-      sendError(res, 'Server error during registration', 500, 
+      sendError(res, 'Server error during registration', 500,
         process.env.NODE_ENV === 'development' ? error.message : undefined
       );
     }
@@ -124,6 +105,9 @@ class AuthController {
         return sendError(res, 'Invalid email or password', 401);
       }
 
+      // Update last login
+      await userModel.updateLastLogin(user.id);
+
       // Generate JWT token
       const token = generateToken({
         id: user.id,
@@ -131,22 +115,10 @@ class AuthController {
         role: user.role
       });
 
-      // Send response
+      // Send response with complete user data
       sendResponse(res, 'Login successful', {
         token,
-        user: {
-          id: user.id,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          email: user.email,
-          role: user.role,
-          department: user.department,
-          institution: user.institution,
-          title: user.title,
-          student_id: user.student_id,
-          enrollment_year: user.enrollment_year,
-          research_area: user.research_area
-        }
+        user: this.formatUserResponse(user)
       });
 
     } catch (error) {
@@ -169,19 +141,7 @@ class AuthController {
       }
 
       sendResponse(res, 'Profile retrieved successfully', {
-        user: {
-          id: user.id,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          email: user.email,
-          role: user.role,
-          department: user.department,
-          institution: user.institution,
-          title: user.title,
-          student_id: user.student_id,
-          enrollment_year: user.enrollment_year,
-          research_area: user.research_area
-        }
+        user: this.formatUserResponse(user)
       });
 
     } catch (error) {
@@ -190,22 +150,19 @@ class AuthController {
     }
   }
 
-  // @desc    Get extended user profile with all fields
+  // @desc    Get extended user profile (with workflow progress for students)
   // @access  Private
   async getExtendedProfile(req, res) {
     try {
       const userModel = this.getUserModel(req);
-      const user = await userModel.findById(req.user.id);
+      const user = await userModel.findByIdExtended(req.user.id);
 
       if (!user) {
         return sendError(res, 'User not found', 404);
       }
 
-      // Remove sensitive fields
-      const { password_hash, admin_code, ...userProfile } = user;
-
       sendResponse(res, 'Extended profile retrieved successfully', {
-        user: userProfile
+        user: this.formatUserResponse(user, true)
       });
 
     } catch (error) {
@@ -220,22 +177,37 @@ class AuthController {
     try {
       const userModel = this.getUserModel(req);
       
-      // Prepare update data (exclude sensitive fields)
-      const { password, email, role, adminCode, ...updateData } = req.body;
-      
-      const updatedUser = await userModel.update(req.user.id, updateData);
+      const allowedFields = [
+        'first_name', 'last_name', 'student_id', 'department_id', 
+        'current_semester', 'academic_year', 'research_area'
+      ];
 
-      if (!updatedUser) {
-        return sendError(res, 'Failed to update profile', 400);
+      const updateData = {};
+      for (const field of allowedFields) {
+        if (req.body[field] !== undefined) {
+          updateData[field] = req.body[field];
+        }
       }
 
+      if (Object.keys(updateData).length === 0) {
+        return sendError(res, 'No valid fields provided for update', 400);
+      }
+
+      const updatedUser = await userModel.update(req.user.id, updateData);
+      if (!updatedUser) {
+        return sendError(res, 'User not found or update failed', 404);
+      }
+
+      // Get complete updated profile
+      const completeUser = await userModel.findById(req.user.id);
+
       sendResponse(res, 'Profile updated successfully', {
-        user: updatedUser
+        user: this.formatUserResponse(completeUser)
       });
 
     } catch (error) {
       console.error('Profile update error:', error);
-      sendError(res, 'Server error while updating profile', 500);
+      sendError(res, 'Server error during profile update', 500);
     }
   }
 
@@ -246,7 +218,7 @@ class AuthController {
       const userModel = this.getUserModel(req);
       const { currentPassword, newPassword } = req.body;
 
-      // Get current user to verify password
+      // Get current user
       const user = await userModel.findById(req.user.id);
       if (!user) {
         return sendError(res, 'User not found', 404);
@@ -258,14 +230,17 @@ class AuthController {
         return sendError(res, 'Current password is incorrect', 400);
       }
 
-      // Change password
-      await userModel.changePassword(req.user.id, newPassword);
+      // Update password
+      const result = await userModel.changePassword(req.user.id, newPassword);
+      if (!result) {
+        return sendError(res, 'Password change failed', 500);
+      }
 
       sendResponse(res, 'Password changed successfully');
 
     } catch (error) {
       console.error('Password change error:', error);
-      sendError(res, 'Server error while changing password', 500);
+      sendError(res, 'Server error during password change', 500);
     }
   }
 
@@ -281,19 +256,7 @@ class AuthController {
       }
 
       sendResponse(res, 'Token is valid', {
-        user: {
-          id: user.id,
-          first_name: user.first_name,
-          last_name: user.last_name,
-          email: user.email,
-          role: user.role,
-          department: user.department,
-          institution: user.institution,
-          title: user.title,
-          student_id: user.student_id,
-          enrollment_year: user.enrollment_year,
-          research_area: user.research_area
-        }
+        user: this.formatUserResponse(user)
       });
 
     } catch (error) {
@@ -302,28 +265,89 @@ class AuthController {
     }
   }
 
-  // @desc    Get users by role (admin only)
-  // @access  Private (Admin)
+  // @desc    Get users by role
+  // @access  Private (Admin only)
   async getUsersByRole(req, res) {
     try {
-      if (req.user.role !== 'admin') {
-        return sendError(res, 'Access denied. Admin privileges required.', 403);
-      }
-
       const userModel = this.getUserModel(req);
       const { role } = req.params;
-      
+
       const users = await userModel.findByRole(role);
 
       sendResponse(res, `${role} users retrieved successfully`, {
-        users,
-        count: users.length
+        users: users.map(user => this.formatUserResponse(user))
       });
 
     } catch (error) {
       console.error('Get users by role error:', error);
       sendError(res, 'Server error while fetching users', 500);
     }
+  }
+
+  // Helper method to format user response
+  formatUserResponse(user, includeExtended = false) {
+    if (!user) return null;
+
+    const baseResponse = {
+      id: user.id,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      role: user.role,
+      is_active: user.is_active,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      last_login: user.last_login
+    };
+
+    // Add student-specific fields
+    if (user.role === 'student') {
+      baseResponse.student_id = user.student_id;
+      baseResponse.department_id = user.department_id;
+      baseResponse.department = user.dept_name;
+      baseResponse.department_code = user.dept_code;
+      baseResponse.current_semester = user.current_semester;
+      baseResponse.academic_year = user.academic_year;
+      baseResponse.enrollment_year = user.enrollment_year;
+      baseResponse.enrollment_date = user.enrollment_date;
+      baseResponse.research_area = user.research_area;
+      baseResponse.primary_supervisor_id = user.primary_supervisor_id;
+      baseResponse.primary_supervisor_name = user.primary_supervisor_name;
+      baseResponse.primary_supervisor_email = user.primary_supervisor_email;
+      baseResponse.primary_supervisor_designation = user.primary_supervisor_designation;
+      baseResponse.co_supervisor_id = user.co_supervisor_id;
+      baseResponse.co_supervisor_name = user.co_supervisor_name;
+      baseResponse.co_supervisor_email = user.co_supervisor_email;
+      baseResponse.co_supervisor_designation = user.co_supervisor_designation;
+
+      // Include workflow progress if available
+      if (includeExtended) {
+        baseResponse.current_stage = user.current_stage;
+        baseResponse.total_forms_submitted = user.total_forms_submitted;
+        baseResponse.total_forms_approved = user.total_forms_approved;
+        baseResponse.has_pending_actions = user.has_pending_actions;
+        baseResponse.current_gpa = user.current_gpa;
+      }
+    }
+
+    // Add admin-specific fields
+    if (user.role === 'admin') {
+      try {
+        baseResponse.admin_permissions = user.admin_permissions ? JSON.parse(user.admin_permissions) : [];
+      } catch (error) {
+        console.error('Error parsing admin_permissions:', error);
+        baseResponse.admin_permissions = [];
+      }
+    }
+
+    // Add faculty-specific fields
+    if (user.role === 'faculty') {
+      baseResponse.department_id = user.department_id;
+      baseResponse.department = user.dept_name;
+      baseResponse.department_code = user.dept_code;
+    }
+
+    return baseResponse;
   }
 }
 

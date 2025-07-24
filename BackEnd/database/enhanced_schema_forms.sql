@@ -427,6 +427,7 @@ INSERT INTO form_types (
 ('PHDEE02-C', 'GEC Formation Form', 'gec_formation', false, false, true, true, true, 'Graduate Evaluation Committee formation form'),
 
 -- Research Proposal Forms
+('RESEARCH_PROPOSAL', 'Initial Research Proposal', 'research_candidacy', false, true, false, false, false, 'Student research proposal for admin and supervisor approval'),
 ('PHDEE-RP-001', 'Research Proposal Submission', 'research_candidacy', true, true, true, true, true, 'Initial research proposal submission'),
 ('PHDEE-RP-002', 'Research Proposal Defense Request', 'research_candidacy', false, true, true, true, false, 'Request for research proposal defense'),
 

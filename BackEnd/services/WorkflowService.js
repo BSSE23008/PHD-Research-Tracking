@@ -62,9 +62,11 @@ class WorkflowService {
                     ft.form_name,
                     fs.status,
                     fs.submitted_at,
-                    fs.admin_approval_status,
+                    fs.dec_approval_status,
                     fs.supervisor_approval_status,
-                    fs.gec_approval_status
+                    fs.gec_approval_status,
+                    fs.hod_approval_status,
+                    fs.chairperson_approval_status
                 FROM form_submissions fs
                 JOIN form_types ft ON fs.form_type_id = ft.id
                 WHERE fs.user_id = $1 AND ft.workflow_stage = $2
@@ -146,12 +148,16 @@ class WorkflowService {
                 SELECT 
                     ft.form_code,
                     fs.status,
-                    fs.admin_approval_status,
+                    fs.dec_approval_status,
                     fs.supervisor_approval_status,
                     fs.gec_approval_status,
-                    ft.requires_admin_approval,
+                    fs.hod_approval_status,
+                    fs.chairperson_approval_status,
+                    ft.requires_dec_approval,
                     ft.requires_supervisor_approval,
-                    ft.requires_gec_approval
+                    ft.requires_gec_approval,
+                    ft.requires_hod_approval,
+                    ft.requires_chairperson_approval
                 FROM form_types ft
                 LEFT JOIN form_submissions fs ON ft.id = fs.form_type_id AND fs.user_id = $1
                 WHERE ft.form_code = ANY($2) AND ft.workflow_stage = $3
@@ -165,13 +171,19 @@ class WorkflowService {
                 }
 
                 // Check specific approval requirements
-                if (form.requires_admin_approval && form.admin_approval_status !== 'approved') {
+                if (form.requires_dec_approval && form.dec_approval_status !== 'approved') {
                     return false;
                 }
                 if (form.requires_supervisor_approval && form.supervisor_approval_status !== 'approved') {
                     return false;
                 }
                 if (form.requires_gec_approval && form.gec_approval_status !== 'approved') {
+                    return false;
+                }
+                if (form.requires_hod_approval && form.hod_approval_status !== 'approved') {
+                    return false;
+                }
+                if (form.requires_chairperson_approval && form.chairperson_approval_status !== 'approved') {
                     return false;
                 }
             }

@@ -25,7 +25,7 @@ router.post('/login', validateLogin, AuthController.login);
 router.get('/profile', authenticateToken, AuthController.getProfile);
 
 // @route   GET /api/auth/profile/extended
-// @desc    Get extended user profile with all fields
+// @desc    Get extended user profile with workflow progress
 // @access  Private
 router.get('/profile/extended', authenticateToken, AuthController.getExtendedProfile);
 
@@ -34,10 +34,10 @@ router.get('/profile/extended', authenticateToken, AuthController.getExtendedPro
 // @access  Private
 router.put('/profile', authenticateToken, validateProfileUpdate, AuthController.updateProfile);
 
-// @route   PUT /api/auth/change-password
+// @route   PUT /api/auth/password
 // @desc    Change user password
 // @access  Private
-router.put('/change-password', authenticateToken, validatePasswordChange, AuthController.changePassword);
+router.put('/password', authenticateToken, validatePasswordChange, AuthController.changePassword);
 
 // @route   GET /api/auth/verify
 // @desc    Verify JWT token

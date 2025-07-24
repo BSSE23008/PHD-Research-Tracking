@@ -5,7 +5,7 @@ const AuthController = require('../controllers/AuthController');
 const WorkflowService = require('../services/WorkflowService');
 const NotificationService = require('../services/NotificationService');
 const { authenticateToken } = require('../middleware/auth');
-const { validateSignup } = require('../middleware/validation');
+const { validateAdminCreateUser } = require('../middleware/validation');
 
 // Middleware to ensure admin role
 const requireAdmin = (req, res, next) => {
@@ -82,7 +82,7 @@ router.get('/logs', AdminController.getSystemLogs);
 
 // User management routes
 router.get('/users', AdminController.getAllUsers);
-router.post('/users', validateSignup, async (req, res) => {
+router.post('/users', validateAdminCreateUser, async (req, res) => {
     // Use the existing signup functionality for creating users
     await AuthController.signup(req, res);
 });

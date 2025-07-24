@@ -9,7 +9,8 @@ class FormController {
             const query = `
                 SELECT 
                     id, form_code, form_name, description, workflow_stage,
-                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval,
+                    requires_dec_approval, requires_supervisor_approval, requires_gec_approval,
+                    requires_hod_approval, requires_chairperson_approval,
                     max_submissions_per_user, prerequisite_forms, document_templates
                 FROM form_types 
                 WHERE is_active = true
@@ -109,7 +110,8 @@ class FormController {
                 SELECT 
                     form_code, form_name, description, form_schema, 
                     document_templates, prerequisite_forms,
-                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval
+                    requires_dec_approval, requires_supervisor_approval, requires_gec_approval,
+                    requires_hod_approval, requires_chairperson_approval
                 FROM form_types 
                 WHERE form_code = $1 AND is_active = true
             `;
@@ -458,23 +460,32 @@ class FormController {
         try {
             const notifications = [];
 
-            if (formType.requires_admin_approval) {
-                // Get all admins
-                const adminQuery = `SELECT id FROM users WHERE role = 'admin' AND is_active = true`;
-                const adminResult = await pool.query(adminQuery);
+            // DEC approval notifications
+            if (formType.requires_dec_approval) {
+                const decQuery = `
+                    SELECT f.id, u.id as user_id FROM faculty f
+                    LEFT JOIN users u ON f.email = u.email AND u.role = 'faculty'
+                    WHERE f.id IN (
+                        SELECT faculty_id FROM faculty_roles 
+                        WHERE role = 'dec_member' AND is_active = true
+                    )
+                `;
+                const decResult = await pool.query(decQuery);
                 
-                for (const admin of adminResult.rows) {
-                    notifications.push(
-                        NotificationService.createNotification({
-                            userId: admin.id,
-                            title: 'New Form Submission Requires Approval',
-                            message: `${formType.form_name} (${formType.form_code}) submitted and requires admin approval`,
-                            notificationType: 'info',
-                            relatedFormId: submission.id,
-                            actionRequired: true,
-                            actionUrl: `/admin/approvals/${submission.id}`
-                        })
-                    );
+                for (const dec of decResult.rows) {
+                    if (dec.user_id) {
+                        notifications.push(
+                            NotificationService.createNotification({
+                                userId: dec.user_id,
+                                title: 'New Form Submission Requires DEC Approval',
+                                message: `${formType.form_name} (${formType.form_code}) submitted and requires DEC approval`,
+                                notificationType: 'approval_request',
+                                relatedFormId: submission.id,
+                                actionRequired: true,
+                                actionUrl: `/faculty/approvals/${submission.id}`
+                            })
+                        );
+                    }
                 }
             }
 
