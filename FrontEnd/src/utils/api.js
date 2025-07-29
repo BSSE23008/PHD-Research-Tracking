@@ -234,7 +234,20 @@ export const getAvailableForms = async () => {
           workflow_stage: 'in_house_defense_evaluation',
           is_active: true,
           created_at: new Date().toISOString()
+        },
+        {
+          id: 15,
+          form_code: 'PHDEE05-B',
+          form_name: 'PHD Thesis Defense Scheduling Form (Public)',
+          description: 'Form to schedule thesis defense for public',
+          workflow_stage: 'thesis_defense_scheduling_public',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          
         }
+        
       ]
     };
   }
