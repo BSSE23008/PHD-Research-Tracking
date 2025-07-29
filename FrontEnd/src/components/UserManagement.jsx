@@ -1,522 +1,702 @@
 import React, { useState, useEffect } from 'react';
 import {
-  fetchUserProfile,
-  fetchExtendedUserProfile,
-  updateUserProfile,
-  changePassword,
   getAllUsers,
-  getUsersByRole,
+  getAllStudents,
+  getAllFaculty,
+  getAllDepartments,
+  createUser,
+  updateUserStatus,
+  assignSupervisor,
+  updateStudentWorkflowStage,
   formatDate,
-  checkPermission
+  getStatusColor
 } from '../utils/api';
 
-const UserManagement = ({ user, isAdmin = false }) => {
-  const [currentView, setCurrentView] = useState('profile');
-  const [profile, setProfile] = useState(null);
-  const [users, setUsers] = useState([]);
+const UserManagement = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState({});
-  const [passwordForm, setPasswordForm] = useState({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: ''
-  });
+  const [users, setUsers] = useState([]);
+  const [filteredUsers, setFilteredUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [faculty, setFaculty] = useState([]);
   const [filters, setFilters] = useState({
     role: '',
-    search: '',
-    page: 1,
-    limit: 20
+    department: '',
+    status: '',
+    search: ''
   });
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
 
   useEffect(() => {
-    loadInitialData();
+    loadData();
   }, []);
 
-  const loadInitialData = async () => {
+  useEffect(() => {
+    applyFilters();
+  }, [users, filters]);
+
+  const loadData = async () => {
     setLoading(true);
     try {
-      const profileResult = await fetchExtendedUserProfile();
-      if (profileResult.success) {
-        setProfile(profileResult.data.user);
-        setFormData(profileResult.data.user);
+      const [usersResult, deptResult, facultyResult] = await Promise.all([
+        getAllUsers(),
+        getAllDepartments(),
+        getAllFaculty()
+      ]);
+
+      if (usersResult.success) {
+        setUsers(usersResult.data);
       }
 
-      if (isAdmin) {
-        const usersResult = await getAllUsers(filters);
-        if (usersResult.success) {
-          setUsers(usersResult.data.users || []);
-        }
+      if (deptResult.success) {
+        setDepartments(deptResult.data);
+      }
+
+      if (facultyResult.success) {
+        setFaculty(facultyResult.data);
       }
     } catch (error) {
-      console.error('Error loading user data:', error);
+      console.error('Error loading user management data:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleProfileUpdate = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    
+  const applyFilters = () => {
+    let filtered = [...users];
+
+    // Role filter
+    if (filters.role) {
+      filtered = filtered.filter(user => user.role === filters.role);
+    }
+
+    // Department filter
+    if (filters.department) {
+      filtered = filtered.filter(user => user.department_id === parseInt(filters.department));
+    }
+
+    // Status filter
+    if (filters.status) {
+      const isActive = filters.status === 'active';
+      filtered = filtered.filter(user => user.is_active === isActive);
+    }
+
+    // Search filter
+    if (filters.search) {
+      const searchTerm = filters.search.toLowerCase();
+      filtered = filtered.filter(user => 
+        user.first_name.toLowerCase().includes(searchTerm) ||
+        user.last_name.toLowerCase().includes(searchTerm) ||
+        user.email.toLowerCase().includes(searchTerm) ||
+        (user.student_id && user.student_id.toLowerCase().includes(searchTerm))
+      );
+    }
+
+    setFilteredUsers(filtered);
+  };
+
+  const handleUserAction = async (action, userId, data = {}) => {
     try {
-      const result = await updateUserProfile(formData);
+      let result;
+      switch (action) {
+        case 'activate':
+        case 'deactivate':
+          result = await updateUserStatus(userId, action === 'activate');
+          break;
+        case 'create':
+          result = await createUser(data);
+          break;
+        case 'assignSupervisor':
+          result = await assignSupervisor(data);
+          break;
+        case 'updateStage':
+          result = await updateStudentWorkflowStage(userId, data.stage, data.semester, data.academic_year);
+          break;
+        default:
+          return;
+      }
+
       if (result.success) {
-        setProfile(result.data.user);
-        setEditing(false);
-        alert('Profile updated successfully!');
+        alert('Action completed successfully!');
+        loadData();
+        setShowUserModal(false);
+        setSelectedUser(null);
       } else {
-        alert(`Failed to update profile: ${result.message}`);
+        alert(`Error: ${result.message}`);
       }
     } catch (error) {
-      console.error('Error updating profile:', error);
-      alert('Error updating profile. Please try again.');
-    } finally {
-      setLoading(false);
+      alert('Error: ' + error.message);
     }
   };
 
-  const handlePasswordChange = async (e) => {
-    e.preventDefault();
-    
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      alert('New passwords do not match');
+  const handleBulkAction = async (action) => {
+    if (selectedUserIds.length === 0) {
+      alert('Please select users first');
       return;
     }
 
-    setLoading(true);
+    if (!confirm(`Are you sure you want to ${action} ${selectedUserIds.length} users?`)) {
+      return;
+    }
+
     try {
-      const result = await changePassword(passwordForm.currentPassword, passwordForm.newPassword);
-      if (result.success) {
-        setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-        alert('Password changed successfully!');
-      } else {
-        alert(`Failed to change password: ${result.message}`);
-      }
+      const promises = selectedUserIds.map(userId => {
+        switch (action) {
+          case 'activate':
+            return updateUserStatus(userId, true);
+          case 'deactivate':
+            return updateUserStatus(userId, false);
+          default:
+            return Promise.resolve();
+        }
+      });
+
+      await Promise.all(promises);
+      alert(`Bulk ${action} completed successfully!`);
+      loadData();
+      setSelectedUserIds([]);
+      setShowBulkActions(false);
     } catch (error) {
-      console.error('Error changing password:', error);
-      alert('Error changing password. Please try again.');
-    } finally {
-      setLoading(false);
+      alert('Bulk action failed: ' + error.message);
     }
   };
 
-  const loadUsers = async (newFilters = filters) => {
-    setLoading(true);
-    try {
-      const result = await getAllUsers(newFilters);
-      if (result.success) {
-        setUsers(result.data.users || []);
-      }
-    } catch (error) {
-      console.error('Error loading users:', error);
-    } finally {
-      setLoading(false);
-    }
+  const handleUserSelect = (userId) => {
+    setSelectedUserIds(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
   };
 
-  const ProfileView = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-2xl shadow-soft p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-semibold text-gray-900">Profile Information</h3>
-          <button
-            onClick={() => setEditing(!editing)}
-            className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-          >
-            {editing ? 'Cancel' : 'Edit Profile'}
-          </button>
-        </div>
+  const getUserStats = () => {
+    const total = users.length;
+    const active = users.filter(u => u.is_active).length;
+    const byRole = users.reduce((acc, user) => {
+      acc[user.role] = (acc[user.role] || 0) + 1;
+      return acc;
+    }, {});
 
-        {editing ? (
-          <form onSubmit={handleProfileUpdate} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                <input
-                  type="text"
-                  value={formData.first_name || ''}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                <input
-                  type="text"
-                  value={formData.last_name || ''}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  required
-                />
-              </div>
-            </div>
+    return { total, active, byRole };
+  };
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                required
-              />
-            </div>
-
-            {user.role === 'student' && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Student ID</label>
-                    <input
-                      type="text"
-                      value={formData.student_id || ''}
-                      onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Enrollment Year</label>
-                    <input
-                      type="number"
-                      value={formData.enrollment_year || ''}
-                      onChange={(e) => setFormData({ ...formData, enrollment_year: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Research Area</label>
-                  <textarea
-                    value={formData.research_area || ''}
-                    onChange={(e) => setFormData({ ...formData, research_area: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    rows="3"
-                  />
-                </div>
-              </>
-            )}
-
-            {user.role === 'supervisor' && (
-              <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                    <input
-                      type="text"
-                      value={formData.title || ''}
-                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                    <input
-                      type="text"
-                      value={formData.department || ''}
-                      onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Institution</label>
-                  <input
-                    type="text"
-                    value={formData.institution || ''}
-                    onChange={(e) => setFormData({ ...formData, institution: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Research Interests</label>
-                  <textarea
-                    value={formData.research_interests || ''}
-                    onChange={(e) => setFormData({ ...formData, research_interests: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    rows="3"
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="flex space-x-3">
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Saving...' : 'Save Changes'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="bg-gray-500 text-white px-6 py-2 rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Name</label>
-                <p className="text-gray-900">{profile?.first_name} {profile?.last_name}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Email</label>
-                <p className="text-gray-900">{profile?.email}</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Role</label>
-                <span className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full">
-                  {profile?.role}
-                </span>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500">Member Since</label>
-                <p className="text-gray-900">{formatDate(profile?.created_at)}</p>
-              </div>
-            </div>
-
-            {user.role === 'student' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Student ID</label>
-                  <p className="text-gray-900">{profile?.student_id || 'Not specified'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Enrollment Year</label>
-                  <p className="text-gray-900">{profile?.enrollment_year || 'Not specified'}</p>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-500">Research Area</label>
-                  <p className="text-gray-900">{profile?.research_area || 'Not specified'}</p>
-                </div>
-              </div>
-            )}
-
-            {user.role === 'supervisor' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Title</label>
-                  <p className="text-gray-900">{profile?.title || 'Not specified'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Department</label>
-                  <p className="text-gray-900">{profile?.department || 'Not specified'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Institution</label>
-                  <p className="text-gray-900">{profile?.institution || 'Not specified'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500">Max Students</label>
-                  <p className="text-gray-900">{profile?.max_students || 'Not specified'}</p>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-500">Research Interests</label>
-                  <p className="text-gray-900">{profile?.research_interests || 'Not specified'}</p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Password Change Section */}
-      <div className="bg-white rounded-2xl shadow-soft p-6">
-        <h3 className="text-xl font-semibold text-gray-900 mb-6">Change Password</h3>
-        <form onSubmit={handlePasswordChange} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-            <input
-              type="password"
-              value={passwordForm.currentPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-            <input
-              type="password"
-              value={passwordForm.newPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              value={passwordForm.confirmPassword}
-              onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Changing...' : 'Change Password'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-
-  const UsersView = () => (
-    <div className="space-y-6">
-      {/* Filters */}
-      <div className="bg-white rounded-2xl shadow-soft p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter Users</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select
-            value={filters.role}
-            onChange={(e) => setFilters(prev => ({ ...prev, role: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          >
-            <option value="">All Roles</option>
-            <option value="student">Students</option>
-            <option value="supervisor">Supervisors</option>
-            <option value="admin">Administrators</option>
-          </select>
-          <input
-            type="text"
-            placeholder="Search users..."
-            value={filters.search}
-            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-            className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          />
-          <button
-            onClick={() => loadUsers(filters)}
-            className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-          >
-            Apply Filters
-          </button>
-        </div>
-      </div>
-
-      {/* Users Table */}
-      <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">All Users</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Institution</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((userItem) => (
-                <tr key={userItem.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {userItem.first_name} {userItem.last_name}
-                      </div>
-                      <div className="text-sm text-gray-500">{userItem.email}</div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      userItem.role === 'admin' ? 'bg-red-100 text-red-800' :
-                      userItem.role === 'supervisor' ? 'bg-blue-100 text-blue-800' :
-                      'bg-green-100 text-green-800'
-                    }`}>
-                      {userItem.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {userItem.institution || userItem.department || 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      userItem.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {userItem.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(userItem.created_at)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
+  const stats = getUserStats();
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading user data...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading user management...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">User Management</h2>
-          <p className="text-gray-600 mt-1">Manage your profile and user settings</p>
+      <div className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+              <p className="text-gray-600 mt-1">Manage system users and permissions</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setShowUserModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Add User
+              </button>
+              <button
+                onClick={() => onNavigate('admin')}
+                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Back to Admin
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="bg-white rounded-2xl shadow-soft">
-        <div className="border-b border-gray-200">
-          <nav className="flex space-x-8 px-6">
-            <button
-              onClick={() => setCurrentView('profile')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                currentView === 'profile'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              My Profile
-            </button>
-            {isAdmin && (
-              <button
-                onClick={() => setCurrentView('users')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  currentView === 'users'
-                    ? 'border-primary-500 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                All Users
-              </button>
-            )}
-          </nav>
+      {/* Stats */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
+            <div className="text-sm text-gray-600">Total Users</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-2xl font-bold text-green-600">{stats.active}</div>
+            <div className="text-sm text-gray-600">Active Users</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-2xl font-bold text-purple-600">{stats.byRole.student || 0}</div>
+            <div className="text-sm text-gray-600">Students</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-2xl font-bold text-orange-600">{stats.byRole.faculty || 0}</div>
+            <div className="text-sm text-gray-600">Faculty</div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="text-2xl font-bold text-red-600">{stats.byRole.admin || 0}</div>
+            <div className="text-sm text-gray-600">Admins</div>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6">
-          {currentView === 'profile' && <ProfileView />}
-          {currentView === 'users' && isAdmin && <UsersView />}
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+              <select
+                value={filters.role}
+                onChange={(e) => setFilters({...filters, role: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Roles</option>
+                <option value="student">Students</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Admins</option>
+                <option value="supervisor">Supervisors</option>
+              </select>
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+              <select
+                value={filters.department}
+                onChange={(e) => setFilters({...filters, department: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Departments</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>{dept.dept_name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters({...filters, status: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Search</label>
+              <input
+                type="text"
+                placeholder="Search users..."
+                value={filters.search}
+                onChange={(e) => setFilters({...filters, search: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">
+                Showing {filteredUsers.length} of {users.length} users
+              </span>
+              {selectedUserIds.length > 0 && (
+                <span className="text-sm text-blue-600 font-medium">
+                  {selectedUserIds.length} selected
+                </span>
+              )}
+            </div>
+
+            <div className="flex space-x-2">
+              {selectedUserIds.length > 0 && (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleBulkAction('activate')}
+                    className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                  >
+                    Activate Selected
+                  </button>
+                  <button
+                    onClick={() => handleBulkAction('deactivate')}
+                    className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
+                  >
+                    Deactivate Selected
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={loadData}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Users Table */}
+        <div className="bg-white rounded-lg shadow overflow-hidden">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectedUserIds.length === filteredUsers.length && filteredUsers.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedUserIds(filteredUsers.map(u => u.id));
+                      } else {
+                        setSelectedUserIds([]);
+                      }
+                    }}
+                    className="h-4 w-4 text-blue-600"
+                  />
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredUsers.map(user => (
+                <UserRow
+                  key={user.id}
+                  user={user}
+                  departments={departments}
+                  faculty={faculty}
+                  isSelected={selectedUserIds.includes(user.id)}
+                  onSelect={() => handleUserSelect(user.id)}
+                  onEdit={(user) => {
+                    setSelectedUser(user);
+                    setShowUserModal(true);
+                  }}
+                  onAction={handleUserAction}
+                />
+              ))}
+            </tbody>
+          </table>
+          
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-4">👥</div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No users found</h3>
+              <p className="text-gray-600">Try adjusting your filters or add a new user.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* User Modal */}
+      {showUserModal && (
+        <UserModal
+          user={selectedUser}
+          departments={departments}
+          faculty={faculty}
+          onClose={() => {
+            setShowUserModal(false);
+            setSelectedUser(null);
+          }}
+          onSave={(userData) => {
+            if (selectedUser) {
+              handleUserAction('update', selectedUser.id, userData);
+            } else {
+              handleUserAction('create', null, userData);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const UserRow = ({ user, departments, faculty, isSelected, onSelect, onEdit, onAction }) => {
+  const department = departments.find(d => d.id === user.department_id);
+  
+  return (
+    <tr className={isSelected ? 'bg-blue-50' : ''}>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onSelect}
+          className="h-4 w-4 text-blue-600"
+        />
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="flex items-center">
+          <div className="flex-shrink-0 h-10 w-10">
+            <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center">
+              <span className="text-sm font-medium text-gray-700">
+                {user.first_name.charAt(0)}{user.last_name.charAt(0)}
+              </span>
+            </div>
+          </div>
+          <div className="ml-4">
+            <div className="text-sm font-medium text-gray-900">
+              {user.first_name} {user.last_name}
+            </div>
+            <div className="text-sm text-gray-500">{user.email}</div>
+            {user.student_id && (
+              <div className="text-xs text-gray-400">{user.student_id}</div>
+            )}
+          </div>
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+          {user.role}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+        {department?.dept_name || 'N/A'}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+          user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+        }`}>
+          {user.is_active ? 'Active' : 'Inactive'}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+        {formatDate(user.created_at)}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+        <button
+          onClick={() => onEdit(user)}
+          className="text-blue-600 hover:text-blue-900"
+        >
+          Edit
+        </button>
+        <button
+          onClick={() => onAction(user.is_active ? 'deactivate' : 'activate', user.id)}
+          className={user.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}
+        >
+          {user.is_active ? 'Deactivate' : 'Activate'}
+        </button>
+        {user.role === 'student' && (
+          <button
+            onClick={() => onEdit(user)}
+            className="text-purple-600 hover:text-purple-900"
+          >
+            Manage
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+};
+
+const UserModal = ({ user, departments, faculty, onClose, onSave }) => {
+  const [formData, setFormData] = useState({
+    first_name: user?.first_name || '',
+    last_name: user?.last_name || '',
+    email: user?.email || '',
+    role: user?.role || 'student',
+    department_id: user?.department_id || '',
+    student_id: user?.student_id || '',
+    phone: user?.phone || '',
+    primary_supervisor_id: user?.primary_supervisor_id || '',
+    research_area: user?.research_area || '',
+    current_semester: user?.current_semester || '1st',
+    workflow_stage: user?.workflow_stage || 'admission'
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-3xl max-h-screen overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">
+            {user ? 'Edit User' : 'Add New User'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 text-2xl"
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+              <input
+                type="text"
+                required
+                value={formData.first_name}
+                onChange={(e) => setFormData({...formData, first_name: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+              <input
+                type="text"
+                required
+                value={formData.last_name}
+                onChange={(e) => setFormData({...formData, last_name: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+            <input
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({...formData, role: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="student">Student</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Admin</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Department</label>
+              <select
+                value={formData.department_id}
+                onChange={(e) => setFormData({...formData, department_id: e.target.value})}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Department</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>{dept.dept_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {formData.role === 'student' && (
+            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <h3 className="font-medium text-gray-900">Student Information</h3>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Student ID</label>
+                  <input
+                    type="text"
+                    value={formData.student_id}
+                    onChange={(e) => setFormData({...formData, student_id: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Current Semester</label>
+                  <select
+                    value={formData.current_semester}
+                    onChange={(e) => setFormData({...formData, current_semester: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="1st">1st Semester</option>
+                    <option value="2nd">2nd Semester</option>
+                    <option value="3rd">3rd Semester</option>
+                    <option value="4th">4th Semester</option>
+                    <option value="5th">5th Semester</option>
+                    <option value="6th">6th Semester</option>
+                    <option value="7th">7th Semester</option>
+                    <option value="8th">8th Semester</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Primary Supervisor</label>
+                <select
+                  value={formData.primary_supervisor_id}
+                  onChange={(e) => setFormData({...formData, primary_supervisor_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Supervisor</option>
+                  {faculty.map(fac => (
+                    <option key={fac.id} value={fac.id}>
+                      {fac.first_name} {fac.last_name} - {fac.designation}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Research Area</label>
+                <textarea
+                  value={formData.research_area}
+                  onChange={(e) => setFormData({...formData, research_area: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Workflow Stage</label>
+                <select
+                  value={formData.workflow_stage}
+                  onChange={(e) => setFormData({...formData, workflow_stage: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="admission">Admission</option>
+                  <option value="supervision_consent">Supervision Consent</option>
+                  <option value="course_registration">Course Registration</option>
+                  <option value="gec_formation">GEC Formation</option>
+                  <option value="comprehensive_exam">Comprehensive Exam</option>
+                  <option value="research_candidacy">Research Candidacy</option>
+                  <option value="synopsis_defense">Synopsis Defense</option>
+                  <option value="thesis_writing">Thesis Writing</option>
+                  <option value="thesis_evaluation">Thesis Evaluation</option>
+                  <option value="thesis_defense">Thesis Defense</option>
+                  <option value="graduation">Graduation</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-6 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              {user ? 'Update' : 'Create'} User
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

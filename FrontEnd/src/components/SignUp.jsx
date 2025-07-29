@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { signup } from '../utils/api';
 import './Forms/logo.css';
 
 const Signup = ({ onSwitchToLogin, onSignup }) => {
@@ -45,13 +46,37 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
     setLoading(true);
     setError('');
 
-    const result = await onSignup(formData);
-
-    if (!result.success) {
-      setError(result.message);
+    // Validation
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
     }
 
-    setLoading(false);
+    if (!formData.agreeToTerms) {
+      setError('Please agree to the terms and conditions');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // Call the signup API
+      const result = await signup(formData);
+      
+      if (result.success) {
+        // Call parent signup handler (which will redirect to login)
+        onSignup(result.data);
+        // Show success message
+        alert('Account created successfully! Please login with your credentials.');
+      } else {
+        setError(result.message || 'Signup failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Signup error:', error);
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderRoleSpecificFields = () => {
@@ -59,30 +84,26 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
       case 'student':
         return (
           <>
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  name="studentId"
-                  placeholder="Student ID"
-                  value={formData.studentId}
-                  onChange={handleInputChange}
-                  className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
-                  required
-                />
-                <select
-                  name="enrollmentYear"
-                  value={formData.enrollmentYear}
-                  onChange={handleInputChange}
-                  className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
-                  required
-                >
-                  <option value="">Enrollment Year</option>
-                  {Array.from({ length: 10 }, (_, i) => 2025 - i).map(year => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-              </div>
+            <div>
+              <input
+                type="text"
+                name="studentId"
+                placeholder="Student ID"
+                value={formData.studentId}
+                onChange={handleInputChange}
+                className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
+                required
+              />
+            </div>
+            <div>
+              <input
+                type="number"
+                name="enrollmentYear"
+                placeholder="Enrollment Year"
+                value={formData.enrollmentYear}
+                onChange={handleInputChange}
+                className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
+              />
             </div>
             <div>
               <input
@@ -92,14 +113,13 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
                 value={formData.researchArea}
                 onChange={handleInputChange}
                 className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
-                required
               />
             </div>
             <div>
               <input
                 type="email"
                 name="advisorEmail"
-                placeholder="Advisor Email"
+                placeholder="Advisor Email (Optional)"
                 value={formData.advisorEmail}
                 onChange={handleInputChange}
                 className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
@@ -112,19 +132,15 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
         return (
           <>
             <div>
-              <select
+              <input
+                type="text"
                 name="title"
+                placeholder="Title (Dr., Prof., etc.)"
                 value={formData.title}
                 onChange={handleInputChange}
                 className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
                 required
-              >
-                <option value="">Academic Title</option>
-                <option value="Assistant Professor">Assistant Professor</option>
-                <option value="Associate Professor">Associate Professor</option>
-                <option value="Professor">Professor</option>
-                <option value="Research Scientist">Research Scientist</option>
-              </select>
+              />
             </div>
             <div>
               <input
@@ -146,6 +162,36 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
                 onChange={handleInputChange}
                 className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
                 required
+              />
+            </div>
+            <div>
+              <input
+                type="text"
+                name="officeLocation"
+                placeholder="Office Location"
+                value={formData.officeLocation}
+                onChange={handleInputChange}
+                className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
+              />
+            </div>
+            <div>
+              <textarea
+                name="researchInterests"
+                placeholder="Research Interests"
+                value={formData.researchInterests}
+                onChange={handleInputChange}
+                rows={3}
+                className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
+              />
+            </div>
+            <div>
+              <input
+                type="number"
+                name="maxStudents"
+                placeholder="Maximum Students"
+                value={formData.maxStudents}
+                onChange={handleInputChange}
+                className="w-full px-5 py-4 border border-gray-300 rounded-lg text-base bg-gray-50 text-black transition-all duration-300 focus:outline-none focus:border-amber-600 focus:bg-white focus:shadow-lg focus:shadow-amber-100"
               />
             </div>
           </>
@@ -187,30 +233,29 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 font-sans">
       <div className="flex w-full max-w-4xl min-h-[600px] bg-white rounded-3xl shadow-2xl overflow-hidden m-8">
-
+        
         {/* Left Side - Welcome Section */}
         <div className="flex-1 bg-gradient-to-br from-amber-700 to-black flex items-center justify-center p-12 relative">
           <div className="text-center text-white w-full max-w-sm flex flex-col items-center gap-8">
-            {/* ITU Logo Placeholder */}
-            <div className='logo-placeholder'></div> 
             <div className="text-center">
+              <div className="logo-placeholder "></div>
               <h1 className="text-4xl font-bold mb-4 leading-tight text-white">
                 Join Our Research Community
               </h1>
               <p className="text-base font-normal opacity-90 leading-relaxed">
-                Create your account to start tracking your PhD research journey
+                Create your account to access the PhD Research Tracking System
               </p>
             </div>
-
+            
             <div className="flex-1 flex items-center justify-center">
               <div className="w-full max-h-48 bg-white bg-opacity-10 rounded-xl p-8 flex items-center justify-center">
                 <div className="text-6xl opacity-60">🎓</div>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={onSwitchToLogin}
+            
+            <button 
+              type="button" 
+              onClick={onSwitchToLogin} 
               className="bg-transparent border-2 border-white text-white px-8 py-3 rounded-full text-base font-semibold cursor-pointer transition-all duration-300 uppercase tracking-wide hover:bg-white hover:text-amber-700 hover:-translate-y-1"
             >
               Sign In
@@ -230,7 +275,7 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
               </p>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
               {error && (
                 <div className="bg-red-100 text-red-800 px-4 py-3 rounded-md border border-red-300 text-sm mb-2">
                   {error}
@@ -258,7 +303,7 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
                     required
                   />
                 </div>
-              </div>
+              
 
               <div>
                 <input
@@ -334,46 +379,45 @@ const Signup = ({ onSwitchToLogin, onSignup }) => {
                 </button>
               </div>
 
-              <div className="flex items-center justify-between my-2 text-sm">
-                <label className="flex items-center gap-2 cursor-pointer text-black text-sm">
-                  <input
-                    type="checkbox"
-                    name="agreeToTerms"
-                    checked={formData.agreeToTerms}
-                    onChange={handleInputChange}
-                    className="sr-only"
-                    required
-                  />
-                  <div className={`w-4 h-4 border-2 rounded flex items-center justify-center transition-all duration-300 ${formData.agreeToTerms ? 'bg-amber-700 border-amber-700' : 'border-gray-300 bg-gray-50'}`}>
-                    {formData.agreeToTerms && (
-                      <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </div>
-                  I agree to Terms & Conditions
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  name="agreeToTerms"
+                  checked={formData.agreeToTerms}
+                  onChange={handleInputChange}
+                  className="sr-only"
+                />
+                <div className={`w-4 h-4 border-2 rounded flex items-center justify-center transition-all duration-300 ${formData.agreeToTerms ? 'bg-amber-700 border-amber-700' : 'border-gray-300 bg-gray-50'}`}>
+                  {formData.agreeToTerms && (
+                    <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </div>
+                <label className="text-sm text-black cursor-pointer">
+                  I agree to the Terms and Conditions
                 </label>
               </div>
 
-              <button
-                type="submit"
+              <button 
+                type="submit" 
                 className="bg-gradient-to-r from-amber-700 to-black text-white border-none px-8 py-4 rounded-full text-base font-semibold cursor-pointer transition-all duration-300 tracking-wide uppercase mt-4 hover:-translate-y-1 hover:shadow-lg hover:shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
-                onClick={handleSubmit}
               >
                 {loading ? 'Creating Account...' : 'Create Account'}
               </button>
-            </div>
+              </div>
+            </form>
 
             <div className="text-center mt-6 pt-6 border-t border-gray-200">
               <p className="text-gray-500 text-sm m-0">
                 Already have an account?
-                <button
-                  type="button"
-                  onClick={onSwitchToLogin}
+                <button 
+                  type="button" 
+                  onClick={onSwitchToLogin} 
                   className="bg-none border-none text-amber-700 cursor-pointer font-semibold no-underline transition-all duration-300 p-0 ml-2 text-sm hover:text-black hover:underline"
                 >
-                  Sign in
+                  Sign In
                 </button>
               </p>
             </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
+import { login } from '../utils/api';
 
 const Login = ({ onSwitchToSignup, onLogin }) => {
   const [formData, setFormData] = useState({
@@ -25,13 +26,29 @@ const Login = ({ onSwitchToSignup, onLogin }) => {
     setLoading(true);
     setError('');
 
-    const result = await onLogin(formData);
-    
-    if (!result.success) {
-      setError(result.message);
+    try {
+      // Call the login API
+      const result = await login(formData.email, formData.password);
+      
+      if (result.success) {
+        // Store token
+        if (formData.rememberMe) {
+          localStorage.setItem('token', result.data.token);
+        } else {
+          sessionStorage.setItem('token', result.data.token);
+        }
+        
+        // Pass user data to parent component
+        onLogin(result.data.user);
+      } else {
+        setError(result.message || 'Login failed. Please check your credentials.');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      setError('Network error. Please check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   return (
@@ -79,7 +96,7 @@ const Login = ({ onSwitchToSignup, onLogin }) => {
               </p>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-6">
               {error && (
                 <div className="bg-red-100 text-red-800 px-4 py-3 rounded-md border border-red-300 text-sm mb-2">
                   {error}
@@ -151,11 +168,10 @@ const Login = ({ onSwitchToSignup, onLogin }) => {
                 type="submit" 
                 className="bg-gradient-to-r from-amber-700 to-black text-white border-none px-8 py-4 rounded-full text-base font-semibold cursor-pointer transition-all duration-300 tracking-wide uppercase mt-4 hover:-translate-y-1 hover:shadow-lg hover:shadow-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={loading}
-                onClick={handleSubmit}
               >
               {loading ? 'Signing In...' : 'Sign In'}
               </button>
-            </div>
+            </form>
 
             <div className="text-center mt-6 pt-6 border-t border-gray-200">
               <p className="text-gray-500 text-sm m-0">

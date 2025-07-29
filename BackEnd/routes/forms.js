@@ -51,6 +51,7 @@ router.get('/progress/:formCode', FormController.loadProgress);
 
 // Form submission routes
 router.post('/submit', FormController.submitForm);
+router.post('/submit-data', FormController.submitFormData);
 router.get('/submissions', FormController.getSubmissions);
 router.get('/submissions/:submissionId', FormController.getSubmissionById);
 

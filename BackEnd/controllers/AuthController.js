@@ -349,6 +349,107 @@ class AuthController {
 
     return baseResponse;
   }
+
+  // Allow students to assign supervisor during onboarding
+  async assignSupervisorOnboarding(req, res) {
+    const { pool } = require('../config/database');
+    
+    try {
+      const { supervisor_id, supervisor_type = 'primary' } = req.body;
+      const student_id = req.user.id; // Get student ID from authenticated user
+
+      // Ensure only students can use this endpoint
+      if (req.user.role !== 'student') {
+        return res.status(403).json({
+          success: false,
+          message: 'This endpoint is only available for students'
+        });
+      }
+
+      if (!supervisor_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Supervisor ID is required'
+        });
+      }
+
+      // Check if faculty exists and can supervise
+      // First try faculty table, then users table (for faculty with login credentials)
+      let facultyCheck = await pool.query(
+        'SELECT id, max_phd_students, current_phd_students FROM faculty WHERE id = $1 AND is_active = true AND can_supervise = true',
+        [supervisor_id]
+      );
+
+      let faculty = null;
+      let actualFacultyId = supervisor_id;
+
+      if (facultyCheck.rows.length > 0) {
+        faculty = facultyCheck.rows[0];
+      } else {
+        // Check if it's a faculty user in the users table
+        const facultyUserCheck = await pool.query(`
+          SELECT u.id as user_id, f.id as faculty_id, f.max_phd_students, f.current_phd_students 
+          FROM users u
+          JOIN faculty f ON u.email = f.email
+          WHERE u.id = $1 AND u.role = $2 AND u.is_active = true AND f.is_active = true AND f.can_supervise = true
+        `, [supervisor_id, 'faculty']);
+
+        if (facultyUserCheck.rows.length > 0) {
+          const result = facultyUserCheck.rows[0];
+          faculty = {
+            id: result.faculty_id,
+            max_phd_students: result.max_phd_students,
+            current_phd_students: result.current_phd_students
+          };
+          actualFacultyId = result.faculty_id; // Use the faculty table ID for foreign key
+        } else {
+          return res.status(404).json({
+            success: false,
+            message: 'Faculty not found or cannot supervise'
+          });
+        }
+      }
+
+      // Check capacity for primary supervisor
+      if (supervisor_type === 'primary' && faculty.current_phd_students >= faculty.max_phd_students) {
+        return res.status(400).json({
+          success: false,
+          message: 'Faculty has reached maximum supervision capacity'
+        });
+      }
+
+      // Update student record
+      const field = supervisor_type === 'primary' ? 'primary_supervisor_id' : 'co_supervisor_id';
+      const result = await pool.query(`
+        UPDATE users 
+        SET ${field} = $1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $2 AND role = 'student'
+        RETURNING id, first_name, last_name, student_id
+      `, [actualFacultyId, student_id]);
+
+      // Update faculty supervision count if primary supervisor
+      if (supervisor_type === 'primary') {
+        await pool.query(
+          'UPDATE faculty SET current_phd_students = current_phd_students + 1 WHERE id = $1',
+          [actualFacultyId]
+        );
+      }
+
+      res.json({
+        success: true,
+        message: `${supervisor_type === 'primary' ? 'Primary' : 'Co'}-supervisor assigned successfully during onboarding`,
+        data: result.rows[0]
+      });
+
+    } catch (error) {
+      console.error('Error assigning supervisor during onboarding:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error assigning supervisor during onboarding',
+        error: error.message
+      });
+    }
+  }
 }
 
 module.exports = new AuthController(); 

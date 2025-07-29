@@ -8,6 +8,11 @@ import FormManager from './components/FormManager'
 import WorkflowTracker from './components/WorkflowTracker'
 import NotificationSystem from './components/NotificationSystem'
 import Navbar from './components/Navbar'
+import OnboardingFlow from './components/OnboardingFlow'
+import EnhancedStudentDashboard from './components/EnhancedStudentDashboard'
+import EnhancedFacultyDashboard from './components/EnhancedFacultyDashboard'
+import DynamicFormRenderer from './components/DynamicFormRenderer'
+import UserManagement from './components/UserManagement'
 import { verifyToken } from './utils/api'
 import './App.css'
 
@@ -16,6 +21,7 @@ function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedFormCode, setSelectedFormCode] = useState(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Check for existing authentication on app load
   useEffect(() => {
@@ -24,16 +30,21 @@ function App() {
 
       if (token) {
         try {
-          // ...on app load, verify token and fetch user profile
-          // setUser(result.data.user)
           const result = await verifyToken()
           if (result.success) {
-            setUser(result.data.user)
-            setCurrentPage('dashboard')
+            const userData = result.data.user;
+            setUser(userData);
+            
+            // Check if user needs onboarding
+            if (userData.role === 'student' && shouldShowOnboarding(userData)) {
+              setShowOnboarding(true);
+              setCurrentPage('onboarding');
+            } else {
+              setCurrentPage('dashboard');
+            }
           } else {
             localStorage.removeItem('token');
             sessionStorage.removeItem('token');
-            // Change 2: If token is invalid, go to login.
             setCurrentPage('login');
           }
         } catch (error) {
@@ -43,7 +54,6 @@ function App() {
           setCurrentPage('login');
         }
       } else {
-        // Change 3: If no token exists, default to login page.
         setCurrentPage('login');
       }
       setLoading(false);
@@ -52,194 +62,311 @@ function App() {
     checkAuth();
   }, []);
 
-  // Handle login (No changes needed here)
-  const handleLogin = async (formData) => {
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, password: formData.password })
-      });
-      const data = await response.json();
-      if (response.ok) {
-        if (formData.rememberMe) {
-          localStorage.setItem('token', data.data.token)
-        } else {
-          sessionStorage.setItem('token', data.data.token)
-        }
-        setUser(data.data.user)
-        // console.log("data.data.user", data.data.user);
-        setCurrentPage('dashboard')
-        return { success: true }
-      } else {
-        return { success: false, message: data.message };
-      }
-    } catch (error) {
-      console.error('Login error:', error);
-      return { success: false, message: 'Network error. Please check if the backend is running.' };
+  // Determine if student needs onboarding
+  const shouldShowOnboarding = (userData) => {
+    // Show onboarding if:
+    // - Student doesn't have a supervisor assigned
+    // - Student is in first semester and hasn't completed initial setup
+    // - Student profile is incomplete
+    return userData.role === 'student' && 
+           (!userData.primary_supervisor_id || 
+            userData.current_semester === '1st' && !userData.onboarding_completed);
+  };
+
+  const handleLogin = (userData) => {
+    console.log('Login successful, user data:', userData);
+    setUser(userData);
+    
+    // Check if student needs onboarding
+    if (userData.role === 'student' && shouldShowOnboarding(userData)) {
+      setShowOnboarding(true);
+      setCurrentPage('onboarding');
+    } else {
+      setCurrentPage('dashboard');
     }
   };
 
-  // Handle signup (No changes needed here)
-  const handleSignup = async (formData) => {
-    try {
-      const response = await fetch('http://localhost:5000/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-      const data = await response.json();
-      if (response.ok) {
-        // Store token
-        localStorage.setItem('token', data.data.token)
-        setUser(data.data.user)
-        setCurrentPage('dashboard')
-        return { success: true }
-      } else {
-        return { success: false, message: data.message }
-      }
-    } catch (error) {
-      console.error('Signup error:', error);
-      return { success: false, message: 'Network error. Please check if the backend is running.' };
-    }
-  }
-
-  // Handle logout
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    sessionStorage.removeItem('token')
-    setUser(null)
-    setCurrentPage('login')
-  }
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    setUser(null);
+    setCurrentPage('login');
+    setShowOnboarding(false);
+    setSelectedFormCode(null);
+  };
 
-  // Generate navigation items based on user role
-  const getNavigationItems = () => {
-    if (!user) return []
-
-    const baseItems = [
-      { id: 'dashboard', label: 'Dashboard', icon: null }
-    ]
-
-    if (user.role === 'student') {
-      baseItems.push(
-        { id: 'forms', label: 'Forms', icon: null },
-        { id: 'workflow', label: 'Progress', icon: null }
-      )
+  const handleNavigation = (page, formCode = null) => {
+    setCurrentPage(page);
+    if (formCode) {
+      setSelectedFormCode(formCode);
     }
+  };
 
-    if (user.role === 'supervisor') {
-      baseItems.push(
-        { id: 'students', label: 'My Students', icon: null }
-      )
+  const handleSwitchToSignup = () => {
+    setCurrentPage('signup');
+  };
+
+  const handleSwitchToLogin = () => {
+    setCurrentPage('login');
+  };
+
+  const handleSignup = async (userData) => {
+    console.log('Signup successful, user data:', userData);
+    // After successful signup, redirect to login
+    setCurrentPage('login');
+    // You might want to show a success message here
+  };
+
+  const handleOnboardingComplete = (result) => {
+    setShowOnboarding(false);
+    setCurrentPage('dashboard');
+    
+    // Show success message
+    if (result && result.message) {
+      alert(result.message);
     }
+    
+    // Update user data to reflect onboarding completion
+    setUser(prev => ({
+      ...prev,
+      onboarding_completed: true
+    }));
+  };
 
-    if (user.role === 'admin') {
-      baseItems.push(
-        { id: 'overview', label: 'Overview', icon: null },
-        { id: 'analytics', label: 'Analytics', icon: null },
-        { id: 'students', label: 'Students', icon: null },
-        { id: 'users', label: 'User Management', icon: null },
-        { id: 'approvals', label: 'Approvals', icon: null },
-        { id: 'exams', label: 'Exams', icon: null },
-        { id: 'defenses', label: 'Defenses', icon: null },
-        { id: 'logs', label: 'System Logs', icon: null }
-      )
-    }
+  const getDashboardComponent = () => {
+    if (!user) return null;
 
-    baseItems.push(
-      { id: 'notifications', label: 'Notifications', icon: null }
-    )
-
-    return baseItems
-  }
-
-  // Enhanced navigation based on user role
-  const getRoleBasedDashboard = () => {
-    if (!user) return null
-
+    // Role-based dashboard selection
     switch (user.role) {
-      case 'admin':
-        return <AdminDashboard user={user} onLogout={handleLogout} currentView={currentPage} />
-      case 'supervisor':
-        return <SupervisorDashboard user={user} />
       case 'student':
-        return <Dashboard user={user} onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} />
+        return (
+          <EnhancedStudentDashboard 
+            user={user} 
+            onNavigate={handleNavigation} 
+            onFormSelect={setSelectedFormCode}
+          />
+        );
+        
+      case 'supervisor':
+      case 'faculty':
+      case 'gec_member':
+      case 'hod':
+      case 'chairperson':
+        return (
+          <EnhancedFacultyDashboard 
+            user={user} 
+            onNavigate={handleNavigation}
+          />
+        );
+        
+      case 'admin':
+        return (
+          <AdminDashboard 
+            user={user} 
+            onNavigate={handleNavigation}
+          />
+        );
+        
       default:
-        return <Dashboard user={user} onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} />
+        // Fallback to original dashboard
+        return (
+          <Dashboard 
+            user={user} 
+            onNavigate={handleNavigation} 
+            onFormSelect={setSelectedFormCode}
+          />
+        );
     }
-  }
+  };
 
-  // Main content router
-  const renderContent = () => {
-    if (!user) {
-      return currentPage === 'signup' ? (
-        <Signup
-          onSignup={handleSignup}
-          onSwitchToLogin={() => setCurrentPage('login')}
+  const getFormsComponent = () => {
+    // Use enhanced dynamic form renderer for students
+    if (user && user.role === 'student') {
+      return (
+        <DynamicFormRenderer
+          user={user}
+          selectedFormCode={selectedFormCode}
+          onNavigate={handleNavigation}
         />
-      ) : (
-        <Login
-          onLogin={handleLogin}
-          onSwitchToSignup={() => setCurrentPage('signup')}
-        />
-      )
+      );
     }
+    
+    // Fallback to original form manager for other roles
+    return (
+      <FormManager
+        user={user}
+        selectedFormCode={selectedFormCode}
+        onNavigate={handleNavigation}
+      />
+    );
+  };
 
-    // For admin users, handle all admin navigation items
-    if (user.role === 'admin' && ['dashboard', 'overview', 'analytics', 'students', 'users', 'approvals', 'exams', 'defenses', 'logs'].includes(currentPage)) {
-      return <AdminDashboard user={user} onLogout={handleLogout} currentView={currentPage} />
-    }
-
-    switch (currentPage) {
-      case 'dashboard':
-        return getRoleBasedDashboard()
-      case 'forms':
-        return user.role === 'student' ? <FormManager user={user} selectedFormCode={selectedFormCode} onFormCodeCleared={() => setSelectedFormCode(null)} /> : getRoleBasedDashboard()
-      case 'workflow':
-        return user.role === 'student' ? <WorkflowTracker onNavigate={setCurrentPage} onFormSelect={setSelectedFormCode} /> : getRoleBasedDashboard()
-      case 'students':
-        return user.role === 'supervisor' ? <SupervisorDashboard user={user} /> : getRoleBasedDashboard()
-      case 'notifications': {
-        const { NotificationPage } = NotificationSystem({ user })
-        return <NotificationPage />
-      }
-      default:
-        return getRoleBasedDashboard()
-    }
-  }
-
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading application...</p>
+          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-6 text-lg text-gray-600">Loading PhD Research Tracking System...</p>
+          <p className="mt-2 text-sm text-gray-500">Please wait while we prepare your dashboard</p>
         </div>
       </div>
-    )
+    );
   }
 
+  // Render current page
+  const renderCurrentPage = () => {
+    switch (currentPage) {
+      case 'login':
+        return (
+          <Login 
+            onLogin={handleLogin} 
+            onSwitchToSignup={handleSwitchToSignup}
+          />
+        );
+
+      case 'signup':
+        return (
+          <Signup 
+            onSignup={handleSignup} 
+            onSwitchToLogin={handleSwitchToLogin}
+          />
+        );
+
+      case 'onboarding':
+        return (
+          <OnboardingFlow 
+            user={user}
+            onComplete={handleOnboardingComplete}
+            onNavigate={handleNavigation}
+          />
+        );
+
+      case 'dashboard':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            {getDashboardComponent()}
+          </div>
+        );
+
+      case 'forms':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            {getFormsComponent()}
+          </div>
+        );
+
+      case 'workflow':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            <WorkflowTracker 
+              user={user} 
+              onNavigate={handleNavigation}
+            />
+          </div>
+        );
+
+      case 'notifications':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            <NotificationSystem 
+              user={user} 
+              onNavigate={handleNavigation}
+            />
+          </div>
+        );
+
+      case 'admin':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            <AdminDashboard 
+              user={user} 
+              onNavigate={handleNavigation}
+            />
+          </div>
+        );
+
+      case 'users':
+        return (
+          <div className="min-h-screen bg-gray-50">
+            <Navbar 
+              user={user} 
+              onLogout={handleLogout} 
+              onNavigate={handleNavigation}
+              currentPage={currentPage}
+            />
+            <UserManagement 
+              user={user} 
+              onNavigate={handleNavigation}
+            />
+          </div>
+        );
+
+      default:
+        return (
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-gray-900 mb-4">Page Not Found</h1>
+              <p className="text-gray-600 mb-6">The page you're looking for doesn't exist.</p>
+              <button
+                onClick={() => handleNavigation('dashboard')}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Go to Dashboard
+              </button>
+            </div>
+          </div>
+        );
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar
-        user={user}
-        onLogout={handleLogout}
-        navigationItems={getNavigationItems()}
-        activeView={currentPage}
-        onNavigate={setCurrentPage}
-        notifications={[]}
-        showSearch={false}
-      />
-      <main className="py-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {renderContent()}
+    <div className="App">
+      {renderCurrentPage()}
+      
+      {/* Global notifications or modals can be added here */}
+      {showOnboarding && currentPage !== 'onboarding' && (
+        <div className="fixed bottom-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg">
+          <p className="font-medium">Complete your onboarding!</p>
+          <p className="text-sm mt-1">Finish setting up your PhD program profile.</p>
+          <button
+            onClick={() => setCurrentPage('onboarding')}
+            className="mt-2 px-3 py-1 bg-white text-blue-600 rounded text-sm hover:bg-gray-100"
+          >
+            Complete Now
+          </button>
         </div>
-      </main>
-      {/* {user && (
-        <div className="debug-user-info" style={{ position: 'fixed', bottom: 10, right: 10, background: 'white', padding: '10px', border: '1px solid #ccc', zIndex: 1000 }}>
-          <pre>{JSON.stringify(user, null, 2)}</pre>
-        </div>
-      )} */}
+      )}
     </div>
   );
 }

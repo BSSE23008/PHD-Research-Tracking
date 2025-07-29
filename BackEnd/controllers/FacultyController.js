@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const { pool } = require('../config/database');
 
 class FacultyController {
     // Get all faculty members with their roles
@@ -22,7 +22,7 @@ class FacultyController {
                 ORDER BY f.last_name, f.first_name
             `;
             
-            const result = await db.query(query);
+            const result = await pool.query(query);
             res.json({
                 success: true,
                 data: result.rows
@@ -55,7 +55,7 @@ class FacultyController {
                 GROUP BY f.id, d.dept_name, d.dept_code
             `;
             
-            const result = await db.query(query, [id]);
+            const result = await pool.query(query, [id]);
             
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -98,7 +98,7 @@ class FacultyController {
             }
 
             // Check if faculty ID or email already exists
-            const existingCheck = await db.query(
+            const existingCheck = await pool.query(
                 'SELECT id FROM faculty WHERE faculty_id = $1 OR email = $2',
                 [faculty_id, email]
             );
@@ -121,7 +121,7 @@ class FacultyController {
                 RETURNING id, faculty_id, first_name, last_name, email
             `;
 
-            const facultyResult = await db.query(facultyQuery, [
+            const facultyResult = await pool.query(facultyQuery, [
                 faculty_id, first_name, last_name, email, title, designation,
                 department_id, institution, office_location, contact_no,
                 research_interests, research_areas, qualification, experience_years,
@@ -133,7 +133,7 @@ class FacultyController {
             // Assign roles if provided
             if (roles && roles.length > 0) {
                 for (const role of roles) {
-                    await db.query(
+                    await pool.query(
                         'INSERT INTO faculty_roles (faculty_id, role, department_id, assigned_by) VALUES ($1, $2, $3, $4)',
                         [newFacultyId, role, department_id, req.user.id]
                     );
@@ -198,7 +198,7 @@ class FacultyController {
                 RETURNING *
             `;
 
-            const result = await db.query(query, values);
+            const result = await pool.query(query, values);
 
             if (result.rows.length === 0) {
                 return res.status(404).json({
@@ -236,7 +236,7 @@ class FacultyController {
             }
 
             // Check if faculty exists
-            const facultyCheck = await db.query(
+            const facultyCheck = await pool.query(
                 'SELECT id FROM faculty WHERE id = $1 AND is_active = true',
                 [faculty_id]
             );
@@ -249,7 +249,7 @@ class FacultyController {
             }
 
             // Check if role already assigned
-            const existingRole = await db.query(
+            const existingRole = await pool.query(
                 'SELECT id FROM faculty_roles WHERE faculty_id = $1 AND role = $2 AND is_active = true',
                 [faculty_id, role]
             );
@@ -262,7 +262,7 @@ class FacultyController {
             }
 
             // Assign role
-            const result = await db.query(`
+            const result = await pool.query(`
                 INSERT INTO faculty_roles (faculty_id, role, department_id, assigned_by, notes)
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING *
@@ -289,7 +289,7 @@ class FacultyController {
         try {
             const { faculty_id, role } = req.body;
 
-            const result = await db.query(`
+            const result = await pool.query(`
                 UPDATE faculty_roles 
                 SET is_active = false 
                 WHERE faculty_id = $1 AND role = $2 AND is_active = true
@@ -339,7 +339,7 @@ class FacultyController {
 
             query += ` ORDER BY f.last_name, f.first_name`;
 
-            const result = await db.query(query, params);
+            const result = await pool.query(query, params);
 
             res.json({
                 success: true,
@@ -413,7 +413,7 @@ class FacultyController {
                 ORDER BY fs.submitted_at DESC
             `;
 
-            const result = await db.query(query, [faculty_id]);
+            const result = await pool.query(query, [faculty_id]);
 
             res.json({
                 success: true,
@@ -460,7 +460,7 @@ class FacultyController {
                 )
             `;
 
-            const permissionResult = await db.query(permissionQuery, [form_submission_id, faculty_id, approval_stage]);
+            const permissionResult = await pool.query(permissionQuery, [form_submission_id, faculty_id, approval_stage]);
 
             if (permissionResult.rows.length === 0) {
                 return res.status(403).json({
@@ -470,7 +470,7 @@ class FacultyController {
             }
 
             // Update approval status
-            const updateResult = await db.query(
+            const updateResult = await pool.query(
                 'SELECT update_form_approval_status($1, $2, $3, $4, $5)',
                 [form_submission_id, approval_stage, status, faculty_id, comments]
             );
@@ -505,7 +505,7 @@ class FacultyController {
                 ORDER BY department, faculty_name
             `;
 
-            const result = await db.query(query);
+            const result = await pool.query(query);
 
             res.json({
                 success: true,

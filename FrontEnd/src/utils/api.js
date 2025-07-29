@@ -73,7 +73,7 @@ export const fetchUserProfile = async () => {
   return apiRequest('/auth/profile');
 };
 
-// Fetch extended user profile (with all fields)
+// Fetch extended user profile (with workflow progress and complete student data)
 export const fetchExtendedUserProfile = async () => {
   const result = await apiRequest('/auth/profile/extended');
   if (!result.success) {
@@ -156,7 +156,7 @@ export const getAvailableForms = async () => {
           id: 4,
           form_code: 'PHDEE03',
           form_name: 'Comprehensive Examination Request Form',
-          description: 'Form to request comprehensive examination',
+          description: 'Request form for comprehensive examination',
           workflow_stage: 'comprehensive_exam',
           is_active: true,
           created_at: new Date().toISOString()
@@ -320,6 +320,14 @@ export const submitForm = async (formCode, formData, semester = null, academicYe
   });
 };
 
+// Submit form data (alternative format for special cases like onboarding)
+export const submitFormData = async (formData) => {
+  return apiRequest('/forms/submit-data', {
+    method: 'POST',
+    body: JSON.stringify(formData)
+  });
+};
+
 // Get form submissions
 export const getFormSubmissions = async (params = {}) => {
   const queryParams = new URLSearchParams();
@@ -369,9 +377,24 @@ export const getFormAnalytics = async () => {
   return apiRequest('/forms/analytics');
 };
 
-// Get dashboard summary
+// Get dashboard summary for students
 export const getDashboardSummary = async () => {
-  return apiRequest('/forms/dashboard/summary');
+  const result = await apiRequest('/forms/dashboard/summary');
+  if (!result.success) {
+    // Return fallback data if API call fails
+    return {
+      success: true,
+      data: {
+        currentSemester: '1st',
+        workflowStage: 'supervision_consent',
+        totalFormsSubmitted: 0,
+        pendingForms: [],
+        recentSubmissions: [],
+        unreadNotifications: 0
+      }
+    };
+  }
+  return result;
 };
 
 // ==================== NOTIFICATION APIs ====================
@@ -523,8 +546,35 @@ export const getAutoFillData = (userProfile) => {
     autoFillData.program = userProfile.research_area || userProfile.researchArea;
   }
 
-  if (userProfile.advisor_email || userProfile.advisorEmail) {
-    autoFillData.supervisorEmail = userProfile.advisor_email || userProfile.advisorEmail;
+  // Department information
+  if (userProfile.department) {
+    autoFillData.department = userProfile.department;
+  }
+
+  if (userProfile.department_code) {
+    autoFillData.departmentCode = userProfile.department_code;
+  }
+
+  // Supervisor information
+  if (userProfile.primary_supervisor_name) {
+    autoFillData.supervisorName = userProfile.primary_supervisor_name;
+  }
+
+  if (userProfile.primary_supervisor_email) {
+    autoFillData.supervisorEmail = userProfile.primary_supervisor_email;
+  }
+
+  if (userProfile.primary_supervisor_designation) {
+    autoFillData.supervisorTitle = userProfile.primary_supervisor_designation;
+  }
+
+  // Current semester and academic year
+  if (userProfile.current_semester) {
+    autoFillData.currentSemester = userProfile.current_semester;
+  }
+
+  if (userProfile.academic_year) {
+    autoFillData.academicYear = userProfile.academic_year;
   }
 
   // If user is a supervisor, they might be filling for their students
@@ -616,4 +666,297 @@ export const checkPermission = (userRole, action) => {
   
   const userPermissions = permissions[userRole] || [];
   return userPermissions.includes('*') || userPermissions.includes(action);
+};
+
+// ==================== FACULTY MANAGEMENT APIs ====================
+
+// Get all faculty members
+export const getAllFaculty = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  return apiRequest(`/faculty${queryParams ? `?${queryParams}` : ''}`);
+};
+
+// Get faculty by ID
+export const getFacultyById = async (id) => {
+  return apiRequest(`/faculty/${id}`);
+};
+
+// Get faculty by role
+export const getFacultyByRole = async (role) => {
+  return apiRequest(`/faculty/role/${role}`);
+};
+
+// Add new faculty member (Admin only)
+export const addFaculty = async (facultyData) => {
+  return apiRequest('/faculty', {
+    method: 'POST',
+    body: JSON.stringify(facultyData)
+  });
+};
+
+// Update faculty member (Admin only)
+export const updateFaculty = async (id, updateData) => {
+  return apiRequest(`/faculty/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updateData)
+  });
+};
+
+// ==================== GEC COMMITTEE APIs ====================
+
+// Get student's GEC committee
+export const getMyGECCommittee = async () => {
+  const result = await apiRequest('/gec/my-committee');
+  if (!result.success) {
+    // Return null data if no committee found
+    return {
+      success: true,
+      data: null
+    };
+  }
+  return result;
+};
+
+// Get all GEC committees (Admin only)
+export const getAllGECCommittees = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  return apiRequest(`/gec${queryParams ? `?${queryParams}` : ''}`);
+};
+
+// Get GEC committee by ID
+export const getGECCommitteeById = async (id) => {
+  return apiRequest(`/gec/${id}`);
+};
+
+// Create new GEC committee (Admin only)
+export const createGECCommittee = async (committeeData) => {
+  return apiRequest('/gec', {
+    method: 'POST',
+    body: JSON.stringify(committeeData)
+  });
+};
+
+// Update GEC committee (Admin only)
+export const updateGECCommittee = async (id, updateData) => {
+  return apiRequest(`/gec/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updateData)
+  });
+};
+
+// Add member to GEC committee (Admin only)
+export const addGECMember = async (committeeId, memberData) => {
+  return apiRequest(`/gec/${committeeId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(memberData)
+  });
+};
+
+// Remove member from GEC committee (Admin only)
+export const removeGECMember = async (committeeId, memberId) => {
+  return apiRequest(`/gec/${committeeId}/members/${memberId}`, {
+    method: 'DELETE'
+  });
+};
+
+// Student request for GEC committee change
+export const createGECChangeRequest = async (requestData) => {
+  return apiRequest('/gec/change-request', {
+    method: 'POST',
+    body: JSON.stringify(requestData)
+  });
+};
+
+// Get GEC change requests
+export const getGECChangeRequests = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  return apiRequest(`/gec/change-requests/all${queryParams ? `?${queryParams}` : ''}`);
+};
+
+// Get student's GEC change requests
+export const getMyGECChangeRequests = async () => {
+  const result = await apiRequest('/gec/change-requests/my-requests');
+  if (!result.success) {
+    // Return empty array if no change requests found
+    return {
+      success: true,
+      data: []
+    };
+  }
+  return result;
+};
+
+// Approve/Reject GEC change request
+export const approveGECChangeRequest = async (requestId, approvalData) => {
+  return apiRequest(`/gec/change-requests/${requestId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(approvalData)
+  });
+};
+
+// Get GEC statistics (Admin only)
+export const getGECStatistics = async () => {
+  return apiRequest('/gec/reports/statistics');
+};
+
+// ==================== DEPARTMENT MANAGEMENT APIs ====================
+
+// Get all departments
+export const getAllDepartments = async () => {
+  const result = await apiRequest('/admin/departments');
+  if (!result.success) {
+    // Return fallback departments if API fails
+    return {
+      success: true,
+      data: [
+        { id: 1, dept_code: 'CS', dept_name: 'Computer Science', dept_full_name: 'Department of Computer Science' },
+        { id: 2, dept_code: 'EE', dept_name: 'Electrical Engineering', dept_full_name: 'Department of Electrical Engineering' },
+        { id: 3, dept_code: 'SE', dept_name: 'Software Engineering', dept_full_name: 'Department of Software Engineering' }
+      ]
+    };
+  }
+  return result;
+};
+
+// Add new department (Admin only)
+export const addDepartment = async (deptData) => {
+  return apiRequest('/admin/departments', {
+    method: 'POST',
+    body: JSON.stringify(deptData)
+  });
+};
+
+// ==================== STUDENT MANAGEMENT APIs ====================
+
+// Get student by ID (Admin only)
+export const getStudentById = async (id) => {
+  return apiRequest(`/admin/students/${id}`);
+};
+
+// Add new student (Admin only)
+export const addStudent = async (studentData) => {
+  return apiRequest('/admin/students', {
+    method: 'POST',
+    body: JSON.stringify(studentData)
+  });
+};
+
+// Update student (Admin only)
+export const updateStudent = async (id, updateData) => {
+  return apiRequest(`/admin/students/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updateData)
+  });
+};
+
+// Assign supervisor to student (Admin only)
+export const assignSupervisor = async (assignmentData) => {
+  return apiRequest('/admin/students/assign-supervisor', {
+    method: 'POST',
+    body: JSON.stringify(assignmentData)
+  });
+};
+
+// Assign supervisor during student onboarding (Student only)
+export const assignSupervisorOnboarding = async (assignmentData) => {
+  return apiRequest('/auth/onboarding/assign-supervisor', {
+    method: 'POST',
+    body: JSON.stringify(assignmentData)
+  });
+};
+
+// Update student semester (Admin only)
+export const updateStudentSemester = async (updateData) => {
+  return apiRequest('/admin/students/update-semester', {
+    method: 'POST',
+    body: JSON.stringify(updateData)
+  });
+};
+
+// ==================== FORM APPROVAL APIs ====================
+
+// Reject form submission (Admin only)
+export const rejectFormSubmission = async (submissionId, rejectionData) => {
+  return apiRequest(`/admin/forms/submissions/${submissionId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(rejectionData)
+  });
+};
+
+// Delete form submission (Admin only)
+export const deleteFormSubmission = async (submissionId) => {
+  return apiRequest(`/admin/forms/submissions/${submissionId}`, {
+    method: 'DELETE'
+  });
+};
+
+// ==================== ADMIN DASHBOARD APIs ====================
+
+// Get admin dashboard data
+export const getAdminDashboard = async () => {
+  return apiRequest('/admin/dashboard');
+};
+
+// Get detailed statistics (Admin only)
+export const getDetailedStatistics = async () => {
+  return apiRequest('/admin/stats/detailed');
+};
+
+// Process approval (Admin only)
+export const processApproval = async (approvalId, actionData) => {
+  return apiRequest(`/admin/approvals/${approvalId}/process`, {
+    method: 'POST',
+    body: JSON.stringify(actionData)
+  });
+};
+
+// ==================== WORKFLOW & PROGRESS TRACKING APIs ====================
+
+// Get progress report (Admin only)
+export const getProgressReport = async (params = {}) => {
+  const queryParams = new URLSearchParams(params).toString();
+  return apiRequest(`/admin/reports/progress${queryParams ? `?${queryParams}` : ''}`);
+};
+
+// Get workflow statistics
+export const getWorkflowStatistics = async () => {
+  return apiRequest('/admin/stats/workflow');
+};
+
+// ==================== ENHANCED UTILITY FUNCTIONS ====================
+
+// Get available supervisors for assignment
+export const getAvailableSupervisors = async (department = null) => {
+  const params = department ? { department } : {};
+  return getAllFaculty({ ...params, role: 'supervisor' });
+};
+
+// Get student's current workflow stage
+export const getCurrentWorkflowStage = async (studentId = null) => {
+  const endpoint = studentId ? `/workflow/stage/${studentId}` : '/workflow/stage';
+  const result = await apiRequest(endpoint);
+  if (!result.success) {
+    // Return fallback data
+    return {
+      success: true,
+      data: {
+        stage: 'supervision_consent',
+        progress: 10
+      }
+    };
+  }
+  return result;
+};
+
+// Check form availability based on workflow stage
+export const checkFormAvailability = async (formCode) => {
+  return apiRequest(`/forms/availability/${formCode}`);
+};
+
+// Get department-wise statistics
+export const getDepartmentStatistics = async (departmentId = null) => {
+  const endpoint = departmentId 
+    ? `/admin/reports/department/${departmentId}` 
+    : '/admin/reports/department-summary';
+  return apiRequest(endpoint);
 }; 

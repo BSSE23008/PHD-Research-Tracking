@@ -9,8 +9,7 @@ class FormController {
             const query = `
                 SELECT 
                     id, form_code, form_name, description, workflow_stage,
-                    requires_dec_approval, requires_supervisor_approval, requires_gec_approval,
-                    requires_hod_approval, requires_chairperson_approval,
+                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval,
                     max_submissions_per_user, prerequisite_forms, document_templates
                 FROM form_types 
                 WHERE is_active = true
@@ -110,8 +109,7 @@ class FormController {
                 SELECT 
                     form_code, form_name, description, form_schema, 
                     document_templates, prerequisite_forms,
-                    requires_dec_approval, requires_supervisor_approval, requires_gec_approval,
-                    requires_hod_approval, requires_chairperson_approval
+                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval
                 FROM form_types 
                 WHERE form_code = $1 AND is_active = true
             `;
@@ -376,6 +374,119 @@ class FormController {
                 message: 'Failed to submit form',
                 error: error.message
             });
+        }
+    }
+
+    // Submit form data (for onboarding and other special cases)
+    static async submitFormData(req, res) {
+        try {
+            const { form_type, data } = req.body;
+            const userId = req.user.id;
+
+            if (!form_type || !data) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Form type and data are required'
+                });
+            }
+
+            // Handle different form types
+            switch (form_type) {
+                case 'initial_onboarding':
+                    // Store onboarding data in user profile or a separate table
+                    await FormController.handleInitialOnboardingData(userId, data);
+                    break;
+                default:
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid form type'
+                    });
+            }
+
+            res.json({
+                success: true,
+                message: 'Form data submitted successfully',
+                data: {
+                    formType: form_type,
+                    submittedAt: new Date().toISOString()
+                }
+            });
+
+        } catch (error) {
+            console.error('Error submitting form data:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to submit form data',
+                error: error.message
+            });
+        }
+    }
+
+    // Handle initial onboarding data
+    static async handleInitialOnboardingData(userId, data) {
+        try {
+            // Update user profile with onboarding data
+            const updateQuery = `
+                UPDATE users 
+                SET 
+                    research_area = $1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `;
+
+            await pool.query(updateQuery, [
+                data.research_area || null,
+                userId
+            ]);
+
+            // Create a form submission record for the onboarding data
+            const formTypeQuery = `
+                SELECT id FROM form_types WHERE form_code = 'ONBOARDING-001'
+            `;
+            const formTypeResult = await pool.query(formTypeQuery);
+            
+            if (formTypeResult.rows.length === 0) {
+                console.error('Onboarding form type not found');
+                return;
+            }
+            
+            const formTypeId = formTypeResult.rows[0].id;
+            
+            // Create form submission
+            const insertQuery = `
+                INSERT INTO form_submissions (
+                    user_id, form_type_id, form_data, workflow_stage, 
+                    semester, academic_year, status, supervisor_approval_status, hod_approval_status
+                ) VALUES ($1, $2, $3, $4, $5, $6, 'submitted', 'pending', 'pending')
+                RETURNING *
+            `;
+
+            const currentYear = new Date().getFullYear();
+            const academicYear = `${currentYear}-${currentYear + 1}`;
+
+            const result = await pool.query(insertQuery, [
+                userId, 
+                formTypeId, 
+                JSON.stringify(data), 
+                'supervision_consent',
+                1, // First semester
+                academicYear
+            ]);
+
+            const submission = result.rows[0];
+            console.log('Onboarding form submission created:', submission.id);
+
+            // Send notifications to supervisors and HOD
+            await this.sendApprovalNotifications(submission, { 
+                form_code: 'ONBOARDING-001', 
+                form_name: 'Initial Onboarding Form',
+                requires_supervisor_approval: true,
+                requires_admin_approval: false
+            });
+
+        } catch (error) {
+            console.error('Error handling initial onboarding data:', error);
+            throw error;
         }
     }
 

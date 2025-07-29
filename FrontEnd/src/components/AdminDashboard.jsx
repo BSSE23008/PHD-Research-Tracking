@@ -1,314 +1,503 @@
 import React, { useState, useEffect } from 'react';
 import {
-  getAdminDashboardOverview,
-  getWorkflowAnalytics,
-  getAllStudents,
   getAllUsers,
-  getPendingApprovals,
-  getComprehensiveExams,
-  getThesisDefenses,
-  getSystemLogs,
-  approveFormSubmission,
-  updateStudentWorkflowStage,
-  getNotificationStats,
+  getAllStudents,
+  getAllFaculty,
+  getAdminDashboardOverview,
+  getFormSubmissions,
+  getAllGECCommittees,
   createUser,
   updateUserStatus,
+  assignSupervisor,
+  updateStudentWorkflowStage,
+  getAllDepartments,
   formatDate,
-  formatDateTime,
-  getStatusColor,
-  getWorkflowStageDisplayName
+  getStatusColor
 } from '../utils/api';
 
-const AdminDashboard = ({ user, onLogout, currentView = 'overview' }) => {
+const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
-  // Set currentView based on prop, default to 'overview' if 'dashboard'
-  const activeView = currentView === 'dashboard' ? 'overview' : currentView;
+  const [activeTab, setActiveTab] = useState('overview');
   const [dashboardData, setDashboardData] = useState({
     overview: {},
-    analytics: {},
-    students: [],
     users: [],
-    approvals: [],
-    exams: [],
-    defenses: [],
-    logs: [],
-    notifications: {}
+    students: [],
+    faculty: [],
+    submissions: [],
+    committees: [],
+    departments: [],
+    systemStats: {}
   });
-  const [pagination, setPagination] = useState({
-    students: { page: 1, limit: 10 },
-    users: { page: 1, limit: 10 },
-    approvals: { page: 1, limit: 10 },
-    logs: { page: 1, limit: 20 }
-  });
-  const [filters, setFilters] = useState({
-    students: { stage: '', semester: '', academicYear: '' },
-    users: { role: '', search: '' },
-    approvals: { status: '', formType: '' }
-  });
-  const [selectedStudent, setSelectedStudent] = useState(null);
-  const [updateModal, setUpdateModal] = useState({ show: false, student: null, newStage: '' });
-  const [addUserModal, setAddUserModal] = useState({ show: false, type: 'supervisor' });
-  const [newUserData, setNewUserData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    password: '',
-    role: 'supervisor',
-    title: '',
-    department: '',
-    institution: '',
-    officeLocation: '',
-    researchInterests: '',
-    maxStudents: 5
-  });
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   useEffect(() => {
     loadDashboardData();
-    // Load data based on current view
-    loadViewData(activeView);
-  }, [activeView]);
+  }, []);
 
   const loadDashboardData = async () => {
     setLoading(true);
     try {
-      const [overview, analytics, notifications] = await Promise.all([
+      const [
+        overviewResult,
+        usersResult,
+        studentsResult,
+        facultyResult,
+        submissionsResult,
+        committeesResult,
+        departmentsResult
+      ] = await Promise.all([
         getAdminDashboardOverview(),
-        getWorkflowAnalytics(),
-        getNotificationStats()
+        getAllUsers(),
+        getAllStudents(),
+        getAllFaculty(),
+        getFormSubmissions({ admin: true }),
+        getAllGECCommittees(),
+        getAllDepartments()
       ]);
 
-      setDashboardData(prev => ({
-        ...prev,
-        overview: overview.success ? overview.data : {},
-        analytics: analytics.success ? analytics.data : {},
-        notifications: notifications.success ? notifications.data : {}
-      }));
+      setDashboardData({
+        overview: overviewResult.success ? overviewResult.data : {},
+        users: usersResult.success ? usersResult.data : [],
+        students: studentsResult.success ? studentsResult.data : [],
+        faculty: facultyResult.success ? facultyResult.data : [],
+        submissions: submissionsResult.success ? submissionsResult.data.submissions || [] : [],
+        committees: committeesResult.success ? committeesResult.data : [],
+        departments: departmentsResult.success ? departmentsResult.data : [],
+        systemStats: calculateSystemStats(
+          usersResult.data || [],
+          studentsResult.data || [],
+          submissionsResult.data?.submissions || []
+        )
+      });
     } catch (error) {
-      console.error('Error loading dashboard data:', error);
+      console.error('Error loading admin dashboard:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadViewData = (view) => {
-    // Load data for specific views
-    switch (view) {
-      case 'students':
-        loadStudents();
-        break;
-      case 'users':
-        loadUsers();
-        break;
-      case 'approvals':
-        loadApprovals();
-        break;
-      case 'exams':
-        loadExams();
-        break;
-      case 'defenses':
-        loadDefenses();
-        break;
-      case 'logs':
-        loadLogs();
-        break;
-      default:
-        break;
-    }
+  const calculateSystemStats = (users, students, submissions) => {
+    const now = new Date();
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    return {
+      totalUsers: users.length,
+      activeUsers: users.filter(u => u.is_active).length,
+      newUsersThisMonth: users.filter(u => new Date(u.created_at) >= thisMonth).length,
+      totalStudents: students.length,
+      activeStudents: students.filter(s => s.is_active).length,
+      totalSubmissions: submissions.length,
+      pendingSubmissions: submissions.filter(s => s.status === 'submitted' || s.admin_approval_status === 'pending').length,
+      approvedSubmissions: submissions.filter(s => s.status === 'approved').length,
+      rejectedSubmissions: submissions.filter(s => s.status === 'rejected').length,
+    };
   };
 
-  const loadStudents = async (page = 1, filters = {}) => {
-    const result = await getAllStudents({ ...filters, page, limit: pagination.students.limit });
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, students: result.data.students || result.data.users?.filter(u => u.role === 'student') || [] }));
-      setPagination(prev => ({ ...prev, students: { ...prev.students, page } }));
-    }
-  };
-
-  const loadUsers = async (page = 1, filters = {}) => {
-    const result = await getAllUsers({ ...filters, page, limit: pagination.users.limit });
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, users: result.data.users || [] }));
-      setPagination(prev => ({ ...prev, users: { ...prev.users, page } }));
-    }
-  };
-
-  const loadApprovals = async (page = 1, filters = {}) => {
-    const result = await getPendingApprovals({ ...filters, page, limit: pagination.approvals.limit });
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, approvals: result.data.approvals || [] }));
-      setPagination(prev => ({ ...prev, approvals: { ...prev.approvals, page } }));
-    }
-  };
-
-  const loadExams = async () => {
-    const result = await getComprehensiveExams();
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, exams: result.data.exams || [] }));
-    }
-  };
-
-  const loadDefenses = async () => {
-    const result = await getThesisDefenses();
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, defenses: result.data.defenses || [] }));
-    }
-  };
-
-  const loadLogs = async (page = 1, filters = {}) => {
-    const result = await getSystemLogs({ ...filters, page, limit: pagination.logs.limit });
-    if (result.success) {
-      setDashboardData(prev => ({ ...prev, logs: result.data.logs || [] }));
-      setPagination(prev => ({ ...prev, logs: { ...prev.logs, page } }));
-    }
-  };
-
-  const handleApproval = async (submissionId, action, comments = '') => {
-    const result = await approveFormSubmission(submissionId, action, comments);
-    if (result.success) {
-      loadApprovals(); // Refresh approvals
-      alert(`Form ${action} successfully!`);
-    } else {
-      alert(`Failed to ${action} form: ${result.message}`);
-    }
-  };
-
-  const handleUpdateWorkflowStage = async () => {
-    if (!updateModal.student || !updateModal.newStage) return;
-
-    const result = await updateStudentWorkflowStage(
-      updateModal.student.id,
-      updateModal.newStage
-    );
-
-    if (result.success) {
-      setUpdateModal({ show: false, student: null, newStage: '' });
-      loadStudents(); // Refresh students
-      alert('Student workflow stage updated successfully!');
-    } else {
-      alert(`Failed to update workflow stage: ${result.message}`);
-    }
-  };
-
-  const handleAddUser = async () => {
+  const handleUserAction = async (action, userId, data = {}) => {
     try {
-      // Validate required fields
-      const requiredFields = ['firstName', 'lastName', 'email', 'password'];
-      const missingFields = requiredFields.filter(field => !newUserData[field] || newUserData[field].trim() === '');
-      
-      if (missingFields.length > 0) {
-        alert(`Please fill in the following required fields: ${missingFields.join(', ')}`);
-        return;
+      let result;
+      switch (action) {
+        case 'activate':
+        case 'deactivate':
+          result = await updateUserStatus(userId, action === 'activate');
+          break;
+        case 'create':
+          result = await createUser(data);
+          break;
+        case 'assignSupervisor':
+          result = await assignSupervisor(data);
+          break;
+        case 'updateStage':
+          result = await updateStudentWorkflowStage(userId, data.stage, data.semester, data.academic_year);
+          break;
+        default:
+          return;
       }
 
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(newUserData.email)) {
-        alert('Please enter a valid email address');
-        return;
-      }
-
-      // Validate password strength
-      const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
-      if (!passwordRegex.test(newUserData.password)) {
-        alert('Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character');
-        return;
-      }
-
-      // Set role based on modal type
-      const role = addUserModal.type === 'supervisor' ? 'supervisor' : 'gec_member';
-
-      // Convert camelCase to the format expected by backend
-      const userData = {
-        firstName: newUserData.firstName.trim(),
-        lastName: newUserData.lastName.trim(),
-        email: newUserData.email.toLowerCase().trim(),
-        password: newUserData.password,
-        confirmPassword: newUserData.password, // Add missing confirmPassword field
-        role: role,
-        title: newUserData.title || '',
-        department: newUserData.department || '',
-        institution: newUserData.institution || '',
-        officeLocation: newUserData.officeLocation || '',
-        researchInterests: newUserData.researchInterests || '',
-        maxStudents: addUserModal.type === 'supervisor' ? (newUserData.maxStudents || 5) : undefined,
-        agreeToTerms: 'true' // Add missing agreeToTerms field
-      };
-
-      const result = await createUser(userData);
       if (result.success) {
-        setAddUserModal({ show: false, type: 'supervisor' });
-        setNewUserData({
-          firstName: '',
-          lastName: '',
-          email: '',
-          password: '',
-          role: 'supervisor',
-          title: '',
-          department: '',
-          institution: '',
-          officeLocation: '',
-          researchInterests: '',
-          maxStudents: 5
-        });
-        loadUsers(); // Refresh users
-        alert(`${role === 'supervisor' ? 'Supervisor' : 'GEC Member'} added successfully!`);
+        alert('Action completed successfully!');
+        loadDashboardData();
+        setShowUserModal(false);
+        setSelectedUser(null);
       } else {
-        // Show more detailed error message
-        const errorMessage = result.message || 'Failed to add user';
-        console.error('Validation errors:', result.errors);
-        alert(`Failed to add ${role === 'supervisor' ? 'supervisor' : 'GEC member'}: ${errorMessage}`);
+        alert(`Error: ${result.message}`);
       }
     } catch (error) {
-      console.error('Error adding user:', error);
-      alert(`Error adding ${addUserModal.type === 'supervisor' ? 'supervisor' : 'GEC member'}: ${error.message}`);
+      alert('Error: ' + error.message);
     }
   };
 
-  const handleToggleUserStatus = async (userId, currentStatus) => {
-    try {
-      const result = await updateUserStatus(userId, !currentStatus);
-      if (result.success) {
-        loadUsers(); // Refresh users
-        alert(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully!`);
-      } else {
-        alert(`Failed to update user status: ${result.message}`);
-      }
-    } catch (error) {
-      alert(`Error updating user status: ${error.message}`);
-    }
-  };
+  const renderOverview = () => (
+    <div className="space-y-6">
+      {/* Key Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <MetricCard
+          title="Total Users"
+          value={dashboardData.systemStats.totalUsers}
+          subtitle={`${dashboardData.systemStats.activeUsers} active`}
+          icon="👥"
+          color="blue"
+        />
+        <MetricCard
+          title="Students"
+          value={dashboardData.systemStats.totalStudents}
+          subtitle={`${dashboardData.systemStats.activeStudents} active`}
+          icon="🎓"
+          color="green"
+        />
+        <MetricCard
+          title="Form Submissions"
+          value={dashboardData.systemStats.totalSubmissions}
+          subtitle={`${dashboardData.systemStats.pendingSubmissions} pending`}
+          icon="📋"
+          color="orange"
+        />
+        <MetricCard
+          title="GEC Committees"
+          value={dashboardData.committees.length}
+          subtitle="Active committees"
+          icon="🏛️"
+          color="purple"
+        />
+      </div>
 
-  const StatCard = ({ title, value, change, color = 'blue', icon }) => (
-    <div className="bg-white p-6 rounded-2xl shadow-soft hover:shadow-medium transition-shadow">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className={`text-2xl font-bold text-${color}-600`}>{value}</p>
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Form Submission Status</h3>
+          <div className="space-y-3">
+            <StatBar
+              label="Approved"
+              value={dashboardData.systemStats.approvedSubmissions}
+              total={dashboardData.systemStats.totalSubmissions}
+              color="green"
+            />
+            <StatBar
+              label="Pending"
+              value={dashboardData.systemStats.pendingSubmissions}
+              total={dashboardData.systemStats.totalSubmissions}
+              color="yellow"
+            />
+            <StatBar
+              label="Rejected"
+              value={dashboardData.systemStats.rejectedSubmissions}
+              total={dashboardData.systemStats.totalSubmissions}
+              color="red"
+            />
+          </div>
         </div>
-        <div className="flex flex-col items-end">
-          {icon && <div className="text-2xl mb-2">{icon}</div>}
-          {change && (
-            <div className={`text-sm ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {change >= 0 ? '+' : ''}{change}%
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Department Distribution</h3>
+          <div className="space-y-3">
+            {dashboardData.departments.slice(0, 5).map(dept => {
+              const studentCount = dashboardData.students.filter(s => s.department_id === dept.id).length;
+              return (
+                <div key={dept.id} className="flex justify-between items-center">
+                  <span className="text-sm font-medium">{dept.dept_code}</span>
+                  <span className="text-sm text-gray-600">{studentCount} students</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">Recent Form Submissions</h3>
+        <div className="space-y-3">
+          {dashboardData.submissions.slice(0, 8).map(submission => (
+            <div key={submission.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex-1">
+                <p className="font-medium">{submission.form_name}</p>
+                <p className="text-sm text-gray-600">
+                  {submission.student_name} • {formatDate(submission.submitted_at)}
+                </p>
+              </div>
+              <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
+                {submission.status}
+              </span>
             </div>
-          )}
+          ))}
         </div>
       </div>
     </div>
   );
 
-  const workflowStages = [
-    'admission', 'supervision_consent', 'course_registration', 'gec_formation',
-    'comprehensive_exam', 'synopsis_defense', 'research_candidacy',
-    'thesis_writing', 'thesis_evaluation', 'thesis_defense', 'graduation'
-  ];
+  const renderUserManagement = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">User Management</h2>
+        <div className="space-x-2">
+          <button
+            onClick={() => setShowUserModal(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Add User
+          </button>
+          <button
+            onClick={loadDashboardData}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* User Filters */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="flex space-x-4">
+          <select className="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+            <option value="">All Roles</option>
+            <option value="student">Students</option>
+            <option value="faculty">Faculty</option>
+            <option value="admin">Admins</option>
+          </select>
+          <select className="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+            <option value="">All Departments</option>
+            {dashboardData.departments.map(dept => (
+              <option key={dept.id} value={dept.id}>{dept.dept_name}</option>
+            ))}
+          </select>
+          <input
+            type="text"
+            placeholder="Search users..."
+            className="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 flex-1"
+          />
+        </div>
+      </div>
+
+      {/* Users Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Department</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {dashboardData.users.slice(0, 20).map(user => (
+              <tr key={user.id}>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {user.first_name} {user.last_name}
+                      </div>
+                      <div className="text-sm text-gray-500">{user.email}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                    {user.role}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {user.department_name || 'N/A'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                    user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {user.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {user.last_login ? formatDate(user.last_login) : 'Never'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                  <button 
+                    onClick={() => {
+                      setSelectedUser(user);
+                      setShowUserModal(true);
+                    }}
+                    className="text-blue-600 hover:text-blue-900"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    onClick={() => handleUserAction(user.is_active ? 'deactivate' : 'activate', user.id)}
+                    className={user.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}
+                  >
+                    {user.is_active ? 'Deactivate' : 'Activate'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderFormManagement = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Form Management</h2>
+        <button
+          onClick={loadDashboardData}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {/* Form Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-2xl font-bold text-blue-600">{dashboardData.systemStats.totalSubmissions}</div>
+          <div className="text-sm text-gray-600">Total Submissions</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-2xl font-bold text-yellow-600">{dashboardData.systemStats.pendingSubmissions}</div>
+          <div className="text-sm text-gray-600">Pending Review</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-2xl font-bold text-green-600">{dashboardData.systemStats.approvedSubmissions}</div>
+          <div className="text-sm text-gray-600">Approved</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-2xl font-bold text-red-600">{dashboardData.systemStats.rejectedSubmissions}</div>
+          <div className="text-sm text-gray-600">Rejected</div>
+        </div>
+      </div>
+
+      {/* Form Submissions Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Form</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stage</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {dashboardData.submissions.slice(0, 20).map(submission => (
+              <tr key={submission.id}>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">{submission.form_name}</div>
+                  <div className="text-sm text-gray-500">{submission.form_code}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm text-gray-900">{submission.student_name}</div>
+                  <div className="text-sm text-gray-500">{submission.student_id}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {formatDate(submission.submitted_at)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
+                    {submission.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  {submission.current_approval_stage || 'Initial'}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                  <button className="text-blue-600 hover:text-blue-900">View</button>
+                  {submission.status === 'submitted' && (
+                    <>
+                      <button className="text-green-600 hover:text-green-900">Approve</button>
+                      <button className="text-red-600 hover:text-red-900">Reject</button>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderSystemSettings = () => (
+    <div className="space-y-6">
+      <h2 className="text-2xl font-bold">System Settings</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Academic Year Settings</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Current Academic Year</label>
+              <input type="text" className="mt-1 block w-full border border-gray-300 rounded px-3 py-2" defaultValue="2024-2025" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Current Semester</label>
+              <select className="mt-1 block w-full border border-gray-300 rounded px-3 py-2">
+                <option>Fall 2024</option>
+                <option>Spring 2025</option>
+                <option>Summer 2025</option>
+              </select>
+            </div>
+            <button className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+              Update Settings
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-lg font-semibold mb-4">Form Deadlines</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Registration Deadline</label>
+              <input type="date" className="mt-1 block w-full border border-gray-300 rounded px-3 py-2" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Withdrawal Deadline</label>
+              <input type="date" className="mt-1 block w-full border border-gray-300 rounded px-3 py-2" />
+            </div>
+            <button className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+              Update Deadlines
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold mb-4">System Maintenance</h3>
+        <div className="space-y-4">
+          <div className="flex justify-between items-center p-4 bg-gray-50 rounded">
+            <div>
+              <h4 className="font-medium">Database Backup</h4>
+              <p className="text-sm text-gray-600">Last backup: 2 hours ago</p>
+            </div>
+            <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+              Run Backup
+            </button>
+          </div>
+          <div className="flex justify-between items-center p-4 bg-gray-50 rounded">
+            <div>
+              <h4 className="font-medium">Clear Cache</h4>
+              <p className="text-sm text-gray-600">Improve system performance</p>
+            </div>
+            <button className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700">
+              Clear Cache
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading admin dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading admin dashboard...</p>
         </div>
       </div>
     );
@@ -316,841 +505,328 @@ const AdminDashboard = ({ user, onLogout, currentView = 'overview' }) => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Main Content - Remove second navbar */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeView === 'overview' && (
-          <div className="space-y-8">
-            {/* Welcome Message */}
-            <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-8 text-white">
-              <h1 className="text-3xl font-bold mb-2">Welcome back, {user.first_name}!</h1>
-              <p className="text-primary-100">Here's an overview of your PhD Research Tracking System</p>
+      {/* Header */}
+      <div className="bg-white shadow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+              <p className="text-gray-600 mt-1">System administration and management</p>
             </div>
-
-            {/* Overview Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
-              <StatCard
-                title="Total Students"
-                value={dashboardData.overview.total_students || 0}
-                color="blue"
-                icon="👨‍🎓"
-              />
-              <StatCard
-                title="Total Supervisors"
-                value={dashboardData.overview.total_supervisors || 0}
-                color="green"
-                icon="👩‍🏫"
-              />
-              <StatCard
-                title="Today's Submissions"
-                value={dashboardData.overview.todays_submissions || 0}
-                color="purple"
-                icon="📄"
-              />
-              <StatCard
-                title="Pending Approvals"
-                value={dashboardData.overview.pending_approvals || 0}
-                color="orange"
-                icon="⏳"
-              />
-              <StatCard
-                title="Upcoming Exams"
-                value={dashboardData.overview.upcoming_exams || 0}
-                color="red"
-                icon="📝"
-              />
-              <StatCard
-                title="Upcoming Defenses"
-                value={dashboardData.overview.upcoming_defenses || 0}
-                color="indigo"
-                icon="🎓"
-              />
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-500">
+                {dashboardData.systemStats.activeUsers} active users
+              </span>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+              <span className="text-sm text-green-600">System Online</span>
             </div>
+          </div>
 
-            {/* Quick Actions */}
-            <div className="bg-white rounded-2xl shadow-soft p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <button
-                  onClick={() => setAddUserModal({ show: true, type: 'supervisor' })}
-                  className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition-colors font-medium"
-                >
-                  Add Supervisor
-                </button>
-                <button
-                  onClick={() => setAddUserModal({ show: true, type: 'gec_member' })}
-                  className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors font-medium"
-                >
-                  Add GEC Member
-                </button>
-                <button
-                  onClick={() => window.location.href = '#approvals'}
-                  className="bg-orange-600 text-white px-6 py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium"
-                >
-                  Review Approvals
-                </button>
-              </div>
-            </div>
-
-            {/* Recent Activity */}
-            <div className="bg-white rounded-2xl shadow-soft p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
-              <div className="space-y-4">
-                {dashboardData.overview.recent_activity && dashboardData.overview.recent_activity.length > 0 ? (
-                  dashboardData.overview.recent_activity.map((activity, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium text-gray-900">{activity.student_name}</p>
-                        <p className="text-sm text-gray-600">{activity.form_name}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(activity.status)}`}>
-                          {activity.status}
-                        </span>
-                        <p className="text-sm text-gray-500 mt-1">{formatDate(activity.submitted_at)}</p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-center py-8">No recent activity</p>
+          {/* Tab Navigation */}
+          <nav className="flex space-x-8">
+            {[
+              { id: 'overview', name: 'Overview', icon: '📊' },
+              { id: 'users', name: 'Users', icon: '👥', count: dashboardData.systemStats.totalUsers },
+              { id: 'forms', name: 'Forms', icon: '📋', count: dashboardData.systemStats.pendingSubmissions },
+              { id: 'committees', name: 'GEC', icon: '🏛️', count: dashboardData.committees.length },
+              { id: 'settings', name: 'Settings', icon: '⚙️' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span>{tab.name}</span>
+                {tab.count > 0 && (
+                  <span className="ml-2 bg-blue-100 text-blue-800 text-xs rounded-full px-2 py-1">
+                    {tab.count}
+                  </span>
                 )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'analytics' && (
-          <div className="space-y-8">
-            {/* Analytics Header */}
-            <div className="bg-white rounded-2xl shadow-soft p-6">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">System Analytics</h2>
-              <p className="text-gray-600">Comprehensive insights into your PhD research tracking system</p>
-            </div>
-
-            {/* Analytics Charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Workflow Stage Distribution */}
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Workflow Stage Distribution</h3>
-                <div className="space-y-4">
-                  {dashboardData.analytics.stage_distribution && dashboardData.analytics.stage_distribution.length > 0 ? (
-                    dashboardData.analytics.stage_distribution.map((stage, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{getWorkflowStageDisplayName(stage.stage)}</p>
-                          <p className="text-xs text-gray-500">{stage.count} students</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-32 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-primary-600 h-2 rounded-full" 
-                              style={{ width: `${(stage.count / (dashboardData.overview.total_students || 1)) * 100}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-sm text-gray-600">{stage.count}</span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">No workflow data available</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Completion Rates */}
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Stage Completion Rates</h3>
-                <div className="space-y-4">
-                  {dashboardData.analytics.completion_rates && Object.keys(dashboardData.analytics.completion_rates).length > 0 ? (
-                    Object.entries(dashboardData.analytics.completion_rates).map(([stage, rate]) => (
-                      <div key={stage} className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{getWorkflowStageDisplayName(stage)}</p>
-                          <p className="text-xs text-gray-500">{rate}% completion</p>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <div className="w-32 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className={`h-2 rounded-full ${rate >= 80 ? 'bg-green-500' : rate >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                              style={{ width: `${rate}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-sm text-gray-600">{rate}%</span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-gray-500 text-center py-8">No completion data available</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Additional Analytics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h4 className="text-sm font-medium text-gray-600 mb-2">Average Processing Time</h4>
-                <p className="text-2xl font-bold text-blue-600">
-                  {dashboardData.analytics.avg_processing_time || 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500">Per form approval</p>
-              </div>
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h4 className="text-sm font-medium text-gray-600 mb-2">Success Rate</h4>
-                <p className="text-2xl font-bold text-green-600">
-                  {dashboardData.analytics.success_rate || 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500">Form approvals</p>
-              </div>
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h4 className="text-sm font-medium text-gray-600 mb-2">Active Users</h4>
-                <p className="text-2xl font-bold text-purple-600">
-                  {dashboardData.analytics.active_users || 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500">Last 30 days</p>
-              </div>
-              <div className="bg-white rounded-2xl shadow-soft p-6">
-                <h4 className="text-sm font-medium text-gray-600 mb-2">System Uptime</h4>
-                <p className="text-2xl font-bold text-indigo-600">
-                  {dashboardData.analytics.system_uptime || 'N/A'}
-                </p>
-                <p className="text-xs text-gray-500">This month</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'students' && (
-          <div className="space-y-6">
-            {/* Filters */}
-            <div className="bg-white rounded-2xl shadow-soft p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Filter Students</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <select
-                  value={filters.students.stage}
-                  onChange={(e) => setFilters(prev => ({ ...prev, students: { ...prev.students, stage: e.target.value } }))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                >
-                  <option value="">All Stages</option>
-                  {workflowStages.map(stage => (
-                    <option key={stage} value={stage}>{getWorkflowStageDisplayName(stage)}</option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  placeholder="Academic Year (e.g., 2024-2025)"
-                  value={filters.students.academicYear}
-                  onChange={(e) => setFilters(prev => ({ ...prev, students: { ...prev.students, academicYear: e.target.value } }))}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                />
-                <button
-                  onClick={() => loadStudents(1, filters.students)}
-                  className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-                >
-                  Apply Filters
-                </button>
-              </div>
-            </div>
-
-            {/* Students Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Students</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Stage</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Semester</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Supervisor</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Forms</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.students.length > 0 ? (
-                      dashboardData.students.map((student) => (
-                        <tr key={student.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {student.first_name} {student.last_name}
-                              </div>
-                              <div className="text-sm text-gray-500">{student.email}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {student.student_id}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
-                              {getWorkflowStageDisplayName(student.current_stage)}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {student.semester} ({student.academic_year})
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {student.supervisor_name || 'Not assigned'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            <div className="flex space-x-2">
-                              <span className="text-green-600">{student.completed_forms || 0} completed</span>
-                              <span className="text-orange-600">{student.pending_forms || 0} pending</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => setUpdateModal({ show: true, student, newStage: student.current_stage })}
-                              className="text-primary-600 hover:text-primary-900 mr-3"
-                            >
-                              Update Stage
-                            </button>
-                            <button
-                              onClick={() => setSelectedStudent(student)}
-                              className="text-green-600 hover:text-green-900"
-                            >
-                              View Details
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="7" className="px-6 py-4 text-center text-gray-500">
-                          No students found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'users' && (
-          <div className="space-y-6">
-            {/* User Management Header */}
-            <div className="bg-white rounded-2xl shadow-soft p-6">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">User Management</h3>
-                  <p className="text-sm text-gray-600">Add and manage supervisors and GEC committee members</p>
-                </div>
-                <div className="flex space-x-3">
-                  <button
-                    onClick={() => setAddUserModal({ show: true, type: 'supervisor' })}
-                    className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 transition-colors"
-                  >
-                    Add Supervisor
-                  </button>
-                  <button
-                    onClick={() => setAddUserModal({ show: true, type: 'gec_member' })}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-                  >
-                    Add GEC Member
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Users Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">All Users</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.users.length > 0 ? (
-                      dashboardData.users.map((user) => (
-                        <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {user.first_name} {user.last_name}
-                              </div>
-                              <div className="text-sm text-gray-500">{user.student_id || user.title}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {user.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs rounded-full ${user.role === 'admin' ? 'bg-red-100 text-red-800' : user.role === 'supervisor' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs rounded-full ${user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                              {user.is_active ? 'Active' : 'Inactive'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(user.created_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button className="text-primary-600 hover:text-primary-900 mr-3">
-                              View
-                            </button>
-                            <button className="text-orange-600 hover:text-orange-900 mr-3">
-                              Edit
-                            </button>
-                            <button 
-                              onClick={() => handleToggleUserStatus(user.id, user.is_active)}
-                              className={`${user.is_active ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}`}
-                            >
-                              {user.is_active ? 'Deactivate' : 'Activate'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
-                          No users found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'approvals' && (
-          <div className="space-y-6">
-            {/* Approvals Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Pending Approvals</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Form</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.approvals.length > 0 ? (
-                      dashboardData.approvals.map((approval) => (
-                        <tr key={approval.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{approval.student_name}</div>
-                              <div className="text-sm text-gray-500">{approval.student_email}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {approval.form_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(approval.submitted_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(approval.admin_approval_status)}`}>
-                              {approval.admin_approval_status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button
-                              onClick={() => handleApproval(approval.id, 'approve')}
-                              className="text-green-600 hover:text-green-900 mr-3"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => handleApproval(approval.id, 'reject')}
-                              className="text-red-600 hover:text-red-900"
-                            >
-                              Reject
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                          No pending approvals
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'exams' && (
-          <div className="space-y-6">
-            {/* Exams Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Comprehensive Exams</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Exam Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.exams.length > 0 ? (
-                      dashboardData.exams.map((exam) => (
-                        <tr key={exam.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{exam.student_name}</div>
-                              <div className="text-sm text-gray-500">{exam.student_email}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(exam.exam_date)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(exam.status)}`}>
-                              {exam.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {exam.result || 'Pending'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button className="text-primary-600 hover:text-primary-900 mr-3">
-                              View Details
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                          No comprehensive exams found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'defenses' && (
-          <div className="space-y-6">
-            {/* Defenses Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Thesis Defenses</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Defense Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Thesis Title</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.defenses.length > 0 ? (
-                      dashboardData.defenses.map((defense) => (
-                        <tr key={defense.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{defense.student_name}</div>
-                              <div className="text-sm text-gray-500">{defense.student_email}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDate(defense.defense_date)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900 max-w-xs truncate">{defense.thesis_title}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(defense.status)}`}>
-                              {defense.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                            <button className="text-primary-600 hover:text-primary-900 mr-3">
-                              View Details
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                          No thesis defenses found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {activeView === 'logs' && (
-          <div className="space-y-6">
-            {/* System Logs Table */}
-            <div className="bg-white rounded-2xl shadow-soft overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">System Logs</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Timestamp</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {dashboardData.logs.length > 0 ? (
-                      dashboardData.logs.map((log) => (
-                        <tr key={log.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDateTime(log.timestamp)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm text-gray-900">{log.user_name}</div>
-                            <div className="text-sm text-gray-500">{log.user_email}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {log.action}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 max-w-xs truncate">
-                            {log.details}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {log.ip_address}
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
-                          No system logs found
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
+              </button>
+            ))}
+          </nav>
+        </div>
       </div>
 
-      {/* Add User Modal */}
-      {addUserModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Add {addUserModal.type === 'supervisor' ? 'Supervisor' : 'GEC Member'}
-            </h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input
-                    type="text"
-                    value={newUserData.firstName}
-                    onChange={(e) => setNewUserData(prev => ({ ...prev, firstName: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="First Name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    value={newUserData.lastName}
-                    onChange={(e) => setNewUserData(prev => ({ ...prev, lastName: e.target.value }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Last Name"
-                  />
-                </div>
-              </div>
+      {/* Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {activeTab === 'overview' && renderOverview()}
+        {activeTab === 'users' && renderUserManagement()}
+        {activeTab === 'forms' && renderFormManagement()}
+        {activeTab === 'committees' && (
+          <div className="bg-white rounded-lg shadow p-8 text-center">
+            <div className="text-4xl mb-4">🏛️</div>
+            <h3 className="text-lg font-medium mb-2">GEC Committee Management</h3>
+            <p className="text-gray-600 mb-4">
+              Manage Graduate Examination Committees and their members.
+            </p>
+            <p className="text-sm text-gray-500">Coming soon...</p>
+          </div>
+        )}
+        {activeTab === 'settings' && renderSystemSettings()}
+      </div>
+
+      {/* User Modal */}
+      {showUserModal && (
+        <UserModal
+          user={selectedUser}
+          departments={dashboardData.departments}
+          faculty={dashboardData.faculty}
+          onClose={() => {
+            setShowUserModal(false);
+            setSelectedUser(null);
+          }}
+          onSave={(userData) => {
+            if (selectedUser) {
+              handleUserAction('update', selectedUser.id, userData);
+            } else {
+              handleUserAction('create', null, userData);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Helper Components
+const MetricCard = ({ title, value, subtitle, icon, color = 'blue' }) => (
+  <div className="bg-white rounded-lg shadow p-6">
+    <div className="flex items-center">
+      <div className={`p-3 rounded-full bg-${color}-100 mr-4`}>
+        <span className="text-2xl">{icon}</span>
+      </div>
+      <div>
+        <p className="text-sm font-medium text-gray-600">{title}</p>
+        <p className={`text-2xl font-bold text-${color}-600`}>{value}</p>
+        <p className="text-sm text-gray-500">{subtitle}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const StatBar = ({ label, value, total, color }) => {
+  const percentage = total > 0 ? (value / total) * 100 : 0;
+  
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center space-x-3 flex-1">
+        <span className="text-sm font-medium text-gray-700 w-20">{label}</span>
+        <div className="flex-1 bg-gray-200 rounded-full h-2">
+          <div
+            className={`bg-${color}-500 h-2 rounded-full transition-all duration-300`}
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+      </div>
+      <span className="text-sm text-gray-600 ml-3">{value}</span>
+    </div>
+  );
+};
+
+const UserModal = ({ user, departments, onClose, onSave }) => {
+  const [formData, setFormData] = useState({
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
+    email: user?.email || '',
+    password: '',
+    confirmPassword: '',
+    role: user?.role || 'student',
+    departmentId: user?.department_id || '',
+    studentId: user?.student_id || '',
+    enrollmentYear: user?.enrollment_year || new Date().getFullYear(),
+    currentSemester: user?.current_semester || '1st',
+    academicYear: user?.academic_year || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`,
+    researchArea: user?.research_area || '',
+    agreeToTerms: true
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    // Validate passwords match for new users
+    if (!user && formData.password !== formData.confirmPassword) {
+      alert('Passwords do not match!');
+      return;
+    }
+    
+    // Validate password strength for new users
+    if (!user && formData.password.length < 8) {
+      alert('Password must be at least 8 characters long!');
+      return;
+    }
+    
+    onSave(formData);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-screen overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-bold">
+            {user ? 'Edit User' : 'Add New User'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            ×
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">First Name</label>
+              <input
+                type="text"
+                required
+                value={formData.firstName}
+                onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Last Name</label>
+              <input
+                type="text"
+                required
+                value={formData.lastName}
+                onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <input
+              type="email"
+              required
+              value={formData.email}
+              onChange={(e) => setFormData({...formData, email: e.target.value})}
+              className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {!user && (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={newUserData.email}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, email: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Email Address"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label className="block text-sm font-medium text-gray-700">Password</label>
                 <input
                   type="password"
-                  value={newUserData.password}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, password: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Password"
+                  required={!user}
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter password"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <label className="block text-sm font-medium text-gray-700">Confirm Password</label>
                 <input
-                  type="text"
-                  value={newUserData.title}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="e.g., Professor, Dr., etc."
+                  type="password"
+                  required={!user}
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  placeholder="Confirm password"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                <input
-                  type="text"
-                  value={newUserData.department}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, department: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Department"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Institution</label>
-                <input
-                  type="text"
-                  value={newUserData.institution}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, institution: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Institution"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Office Location</label>
-                <input
-                  type="text"
-                  value={newUserData.officeLocation}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, officeLocation: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Office Location"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Research Interests</label>
-                <textarea
-                  value={newUserData.researchInterests}
-                  onChange={(e) => setNewUserData(prev => ({ ...prev, researchInterests: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  placeholder="Research Interests"
-                  rows="3"
-                />
-              </div>
-              {addUserModal.type === 'supervisor' && (
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Role</label>
+              <select
+                value={formData.role}
+                onChange={(e) => setFormData({...formData, role: e.target.value})}
+                className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="student">Student</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Admin</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Department</label>
+              <select
+                value={formData.departmentId}
+                onChange={(e) => setFormData({...formData, departmentId: e.target.value})}
+                className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Select Department</option>
+                {departments.map(dept => (
+                  <option key={dept.id} value={dept.id}>{dept.dept_name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {formData.role === 'student' && (
+            <>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Students</label>
+                  <label className="block text-sm font-medium text-gray-700">Student ID</label>
                   <input
-                    type="number"
-                    value={newUserData.maxStudents}
-                    onChange={(e) => setNewUserData(prev => ({ ...prev, maxStudents: parseInt(e.target.value) }))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                    placeholder="Maximum number of students"
-                    min="1"
-                    max="20"
+                    type="text"
+                    required
+                    value={formData.studentId}
+                    onChange={(e) => setFormData({...formData, studentId: e.target.value})}
+                    className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-              )}
-              <div className="flex space-x-3">
-                <button
-                  onClick={handleAddUser}
-                  className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition-colors"
-                >
-                  Add {addUserModal.type === 'supervisor' ? 'Supervisor' : 'GEC Member'}
-                </button>
-                <button
-                  onClick={() => setAddUserModal({ show: false, type: 'supervisor' })}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Enrollment Year</label>
+                  <input
+                    type="number"
+                    required
+                    min="2000"
+                    max={new Date().getFullYear() + 5}
+                    value={formData.enrollmentYear}
+                    onChange={(e) => setFormData({...formData, enrollmentYear: parseInt(e.target.value)})}
+                    className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Research Area</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.researchArea}
+                  onChange={(e) => setFormData({...formData, researchArea: e.target.value})}
+                  className="mt-1 block w-full border border-gray-300 rounded px-3 py-2 focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Machine Learning, Computer Vision, etc."
+                />
+              </div>
+            </>
+          )}
 
-      {/* Update Modal */}
-      {updateModal.show && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Update Workflow Stage</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Student</label>
-                <p className="text-sm text-gray-900">
-                  {updateModal.student?.first_name} {updateModal.student?.last_name}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Stage</label>
-                <select
-                  value={updateModal.newStage}
-                  onChange={(e) => setUpdateModal(prev => ({ ...prev, newStage: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                >
-                  {workflowStages.map(stage => (
-                    <option key={stage} value={stage}>{getWorkflowStageDisplayName(stage)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex space-x-3">
-                <button
-                  onClick={handleUpdateWorkflowStage}
-                  className="flex-1 bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-700 transition-colors"
-                >
-                  Update
-                </button>
-                <button
-                  onClick={() => setUpdateModal({ show: false, student: null, newStage: '' })}
-                  className="flex-1 bg-gray-300 text-gray-700 py-2 rounded-lg hover:bg-gray-400 transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+          <div className="flex justify-end space-x-3 pt-6">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              {user ? 'Update' : 'Create'} User
+            </button>
           </div>
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   );
 };

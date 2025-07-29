@@ -10,7 +10,7 @@ const FORM_STEPS = [
   { id: 3, title: 'Additional Information', description: 'Supplementary details and declarations' }
 ];
 
-export const PHDEE02AForm = ({ onClose, onSubmissionComplete, autoFillData }) => {
+export const PHDEE02AForm = ({ onSubmissionComplete, autoFillData }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -540,3 +540,5 @@ export const PHDEE02AForm = ({ onClose, onSubmissionComplete, autoFillData }) =>
     </div>
   );
 };
+
+export default PHDEE02AForm;

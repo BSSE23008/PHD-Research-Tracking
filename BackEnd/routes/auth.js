@@ -49,4 +49,9 @@ router.get('/verify', authenticateToken, AuthController.verifyToken);
 // @access  Private (Admin)
 router.get('/users/:role', authenticateToken, AuthController.getUsersByRole);
 
+// @route   POST /api/auth/onboarding/assign-supervisor
+// @desc    Allow students to assign supervisor during onboarding
+// @access  Private (Student only)
+router.post('/onboarding/assign-supervisor', authenticateToken, AuthController.assignSupervisorOnboarding);
+
 module.exports = router; 

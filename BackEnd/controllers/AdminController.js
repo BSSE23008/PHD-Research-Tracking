@@ -409,19 +409,41 @@ class AdminController {
             }
 
             // Check if faculty exists and can supervise
-            const facultyCheck = await pool.query(
+            // First try faculty table, then users table (for faculty with login credentials)
+            let facultyCheck = await pool.query(
                 'SELECT id, max_phd_students, current_phd_students FROM faculty WHERE id = $1 AND is_active = true AND can_supervise = true',
                 [supervisor_id]
             );
 
-            if (facultyCheck.rows.length === 0) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Faculty not found or cannot supervise'
-                });
-            }
+            let faculty = null;
+            let actualFacultyId = supervisor_id;
 
-            const faculty = facultyCheck.rows[0];
+            if (facultyCheck.rows.length > 0) {
+                faculty = facultyCheck.rows[0];
+            } else {
+                // Check if it's a faculty user in the users table
+                const facultyUserCheck = await pool.query(`
+                    SELECT u.id as user_id, f.id as faculty_id, f.max_phd_students, f.current_phd_students 
+                    FROM users u
+                    JOIN faculty f ON u.email = f.email
+                    WHERE u.id = $1 AND u.role = $2 AND u.is_active = true AND f.is_active = true AND f.can_supervise = true
+                `, [supervisor_id, 'faculty']);
+
+                if (facultyUserCheck.rows.length > 0) {
+                    const result = facultyUserCheck.rows[0];
+                    faculty = {
+                        id: result.faculty_id,
+                        max_phd_students: result.max_phd_students,
+                        current_phd_students: result.current_phd_students
+                    };
+                    actualFacultyId = result.faculty_id; // Use the faculty table ID for foreign key
+                } else {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Faculty not found or cannot supervise'
+                    });
+                }
+            }
 
             // Check capacity for primary supervisor
             if (supervisor_type === 'primary' && faculty.current_phd_students >= faculty.max_phd_students) {
@@ -438,13 +460,14 @@ class AdminController {
                 SET ${field} = $1, updated_at = CURRENT_TIMESTAMP
                 WHERE id = $2 AND role = 'student'
                 RETURNING id, first_name, last_name, student_id
-            `, [supervisor_id, student_id]);
+            `, [actualFacultyId, student_id]);
 
             // Update faculty supervision count if primary supervisor
             if (supervisor_type === 'primary') {
+                // Update faculty supervision count using the actual faculty ID
                 await pool.query(
                     'UPDATE faculty SET current_phd_students = current_phd_students + 1 WHERE id = $1',
-                    [supervisor_id]
+                    [actualFacultyId]
                 );
             }
 

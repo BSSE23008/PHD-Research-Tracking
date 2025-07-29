@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const config = require('../config/env');
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
@@ -14,7 +15,7 @@ const authenticateToken = (req, res, next) => {
 
   try {
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, config.JWT_SECRET);
     req.user = decoded;
     next();
   } catch (error) {
@@ -55,7 +56,7 @@ const authorizeRole = (...roles) => {
 
 // Generate JWT token
 const generateToken = (payload) => {
-  return jwt.sign(payload, process.env.JWT_SECRET, {
+  return jwt.sign(payload, config.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE || '7d'
   });
 };
@@ -63,7 +64,7 @@ const generateToken = (payload) => {
 // Verify and decode token without middleware
 const verifyToken = (token) => {
   try {
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return jwt.verify(token, config.JWT_SECRET);
   } catch {
     return null;
   }

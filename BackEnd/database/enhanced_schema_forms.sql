@@ -421,6 +421,8 @@ INSERT INTO form_types (
     requires_dec_approval, requires_supervisor_approval, requires_gec_approval, 
     requires_hod_approval, requires_chairperson_approval, description
 ) VALUES
+-- Onboarding Forms
+('ONBOARDING-001', 'Initial Onboarding Form', 'supervision_consent', false, true, false, true, false, 'Initial student onboarding form with research proposal and preferences'),
 -- Supervision and Registration Forms
 ('PHDEE02-A', 'Supervisor Consent Form', 'supervision_consent', false, true, false, true, true, 'Form for supervisor consent and student-supervisor agreement'),
 ('PHDEE02-B', 'Course Registration Form', 'course_registration', true, true, false, true, false, 'Semester-wise course registration form'),

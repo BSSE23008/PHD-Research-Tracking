@@ -577,3 +577,5 @@ const FormPreview = React.forwardRef(({ data }, ref) => (
 ));
 
 FormPreview.displayName = 'FormPreview'; 
+
+export default SupervisorConsentForm; 
