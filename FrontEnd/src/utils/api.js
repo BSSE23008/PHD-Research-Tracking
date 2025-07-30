@@ -244,10 +244,51 @@ export const getAvailableForms = async () => {
           is_active: true,
           created_at: new Date().toISOString()
         }, 
+        {  
+          id: 16,
+          form_code: 'PHDEE-E6',
+          form_name: 'PHD Thesis Defense Evaluation Form (Public)',
+          description: 'Form to evaluate thesis defense for public',
+          workflow_stage: 'thesis_defense_evaluation_public',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 17, 
+          form_code: 'PHDEE-E2-C',
+          form_name: 'PHD Thesis Plagiarism Check Form',
+          description: 'Form to check plagiarism in thesis',
+          workflow_stage: 'thesis_plagiarism_check',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
         { 
-          
+          id: 18, 
+          form_code: 'PHDEE-E3-A', 
+          form_name: 'PHD Thesis Evaluation Form (For External Evaluators)',
+          description: 'Form to evaluate thesis for external evaluators',
+          workflow_stage: 'thesis_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 19,
+          form_code: 'PHDEE-E3-B',
+          form_name: 'PHD Thesis External Evaluation Request Form',
+          description: 'Form to request external evaluation of thesis',
+          workflow_stage: 'thesis_external_evaluation_request',
+          is_active: true, 
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 20,
+          form_code: 'PHDEE-E4-A',
+          form_name: 'PHD Thesis Submission Form (For DPRC)',
+          description: 'Form to submit thesis for DPRC',
+          workflow_stage: 'thesis_submission',
+          is_active: true,
+          created_at: new Date().toISOString()
         }
-        
       ]
     };
   }
