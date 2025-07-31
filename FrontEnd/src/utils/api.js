@@ -720,6 +720,68 @@ export const getAllDepartments = async () => {
   return result;
 };
 
+// Get department details with faculty and DPRC info
+export const getDepartmentDetails = async (departmentId) => {
+  return apiRequest(`/admin/departments/${departmentId}`);
+};
+
+// Create new department with faculty assignment
+export const createDepartment = async (departmentData) => {
+  return apiRequest('/admin/departments', {
+    method: 'POST',
+    body: JSON.stringify(departmentData)
+  });
+};
+
+// Update department
+export const updateDepartment = async (departmentId, departmentData) => {
+  return apiRequest(`/admin/departments/${departmentId}`, {
+    method: 'PUT',
+    body: JSON.stringify(departmentData)
+  });
+};
+
+// Delete/deactivate department
+export const deleteDepartment = async (departmentId) => {
+  return apiRequest(`/admin/departments/${departmentId}`, {
+    method: 'DELETE'
+  });
+};
+
+// ==================== DPRC MANAGEMENT APIs ====================
+
+// Get all DPRC committees
+export const getAllDPRCs = async () => {
+  return apiRequest('/admin/dprc');
+};
+
+// Get DPRC details
+export const getDPRCDetails = async (dprcId) => {
+  return apiRequest(`/admin/dprc/${dprcId}`);
+};
+
+// Create DPRC committee
+export const createDPRC = async (dprcData) => {
+  return apiRequest('/admin/dprc', {
+    method: 'POST',
+    body: JSON.stringify(dprcData)
+  });
+};
+
+// Update DPRC committee
+export const updateDPRC = async (dprcId, dprcData) => {
+  return apiRequest(`/admin/dprc/${dprcId}`, {
+    method: 'PUT',
+    body: JSON.stringify(dprcData)
+  });
+};
+
+// Get available faculty for DPRC assignment
+export const getAvailableFaculty = async (departmentId = null) => {
+  const query = departmentId ? `?department_id=${departmentId}` : '';
+  return apiRequest(`/admin/faculty/available${query}`);
+};
+
 // Add new department (Admin only)
 export const addDepartment = async (deptData) => {
   return apiRequest('/admin/departments', {
