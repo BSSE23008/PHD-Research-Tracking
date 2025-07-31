@@ -18,6 +18,7 @@ import {
   getStatusColor
 } from '../utils/api';
 import FormViewer from './FormViewer';
+import DepartmentManagement from './DepartmentManagement';
 
 const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -643,6 +644,7 @@ const AdminDashboard = () => {
             {[
               { id: 'overview', name: 'Overview', icon: '📊' },
               { id: 'users', name: 'Users', icon: '👥', count: dashboardData.systemStats.totalUsers },
+              { id: 'departments', name: 'Departments', icon: '🏢', count: dashboardData.departments.length },
               { id: 'approvals', name: 'Pending Approvals', icon: '⏳', count: dashboardData.pendingApprovals.length },
               { id: 'forms', name: 'Forms', icon: '📋', count: dashboardData.systemStats.pendingSubmissions },
               { id: 'committees', name: 'GEC', icon: '🏛️', count: dashboardData.committees.length },
@@ -674,6 +676,7 @@ const AdminDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'users' && renderUserManagement()}
+        {activeTab === 'departments' && <DepartmentManagement />}
         {activeTab === 'approvals' && renderPendingApprovals()}
         {activeTab === 'forms' && renderFormManagement()}
         {activeTab === 'committees' && (

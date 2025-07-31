@@ -35,6 +35,16 @@ router.post('/students/update-semester', AdminController.updateStudentSemester);
 // Department Management
 router.get('/departments', AdminController.getDepartments);
 router.post('/departments', AdminController.addDepartment);
+router.get('/departments/:id', AdminController.getDepartmentDetails);
+router.put('/departments/:id', AdminController.updateDepartment);
+router.delete('/departments/:id', AdminController.deleteDepartment);
+
+// DPRC Management
+router.get('/dprc', AdminController.getAllDPRCs);
+router.post('/dprc', AdminController.createDPRC);
+router.get('/dprc/:id', AdminController.getDPRCDetails);
+router.put('/dprc/:id', AdminController.updateDPRC);
+router.get('/faculty/available', AdminController.getAvailableFaculty);
 
 // Reports
 router.get('/reports/progress', AdminController.getProgressReport);

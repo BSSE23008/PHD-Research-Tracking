@@ -40,6 +40,12 @@ class AdminController {
                 WHERE dec_approval_status = 'pending'
                 UNION ALL
                 SELECT 
+                    'DPRC Approvals' as category,
+                    COUNT(*) as count
+                FROM form_submissions 
+                WHERE dprc_approval_status = 'pending'
+                UNION ALL
+                SELECT 
                     'Supervisor Approvals' as category,
                     COUNT(*) as count
                 FROM form_submissions 
@@ -572,10 +578,10 @@ class AdminController {
         }
     }
 
-    // Add new department
+    // Add new department with faculty assignment
     static async addDepartment(req, res) {
         try {
-            const { dept_code, dept_name, dept_full_name } = req.body;
+            const { dept_code, dept_name, dept_full_name, faculty_members = [] } = req.body;
 
             if (!dept_code || !dept_name) {
                 return res.status(400).json({
@@ -584,17 +590,53 @@ class AdminController {
                 });
             }
 
-            const result = await pool.query(`
-                INSERT INTO departments (dept_code, dept_name, dept_full_name)
-                VALUES ($1, $2, $3)
-                RETURNING *
-            `, [dept_code, dept_name, dept_full_name]);
+            if (faculty_members.length < 4) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'At least 4 faculty members are required to create a department'
+                });
+            }
 
-            res.status(201).json({
-                success: true,
-                message: 'Department added successfully',
-                data: result.rows[0]
-            });
+            // Start transaction
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Insert department
+                const deptResult = await client.query(`
+                    INSERT INTO departments (dept_code, dept_name, dept_full_name)
+                    VALUES ($1, $2, $3)
+                    RETURNING *
+                `, [dept_code, dept_name, dept_full_name]);
+
+                const departmentId = deptResult.rows[0].id;
+
+                // Assign faculty members to the department
+                for (const faculty of faculty_members) {
+                    await client.query(`
+                        UPDATE faculty 
+                        SET department_id = $1, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $2 AND is_active = true
+                    `, [departmentId, faculty.id]);
+                }
+
+                await client.query('COMMIT');
+
+                res.status(201).json({
+                    success: true,
+                    message: 'Department created successfully with faculty assignments',
+                    data: {
+                        ...deptResult.rows[0],
+                        faculty_assigned: faculty_members.length
+                    }
+                });
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
 
         } catch (error) {
             if (error.code === '23505') { // Unique constraint violation
@@ -608,6 +650,492 @@ class AdminController {
             res.status(500).json({
                 success: false,
                 message: 'Error adding department',
+                error: error.message
+            });
+        }
+    }
+
+    // Update department
+    static async updateDepartment(req, res) {
+        try {
+            const { id } = req.params;
+            const { dept_code, dept_name, dept_full_name, is_active } = req.body;
+
+            const result = await pool.query(`
+                UPDATE departments 
+                SET dept_code = COALESCE($1, dept_code),
+                    dept_name = COALESCE($2, dept_name),
+                    dept_full_name = COALESCE($3, dept_full_name),
+                    is_active = COALESCE($4, is_active),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $5
+                RETURNING *
+            `, [dept_code, dept_name, dept_full_name, is_active, id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Department not found'
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Department updated successfully',
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('Error updating department:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error updating department',
+                error: error.message
+            });
+        }
+    }
+
+    // Delete department
+    static async deleteDepartment(req, res) {
+        try {
+            const { id } = req.params;
+
+            // Check if department has active students or faculty
+            const dependencyCheck = await pool.query(`
+                SELECT 
+                    COUNT(DISTINCT u.id) as student_count,
+                    COUNT(DISTINCT f.id) as faculty_count
+                FROM departments d
+                LEFT JOIN users u ON d.id = u.department_id AND u.role = 'student' AND u.is_active = true
+                LEFT JOIN faculty f ON d.id = f.department_id AND f.is_active = true
+                WHERE d.id = $1
+                GROUP BY d.id
+            `, [id]);
+
+            if (dependencyCheck.rows.length > 0) {
+                const { student_count, faculty_count } = dependencyCheck.rows[0];
+                if (student_count > 0 || faculty_count > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Cannot delete department. It has ${student_count} active students and ${faculty_count} active faculty members.`
+                    });
+                }
+            }
+
+            const result = await pool.query(`
+                UPDATE departments 
+                SET is_active = false, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+                RETURNING *
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Department not found'
+                });
+            }
+
+            res.json({
+                success: true,
+                message: 'Department deactivated successfully',
+                data: result.rows[0]
+            });
+
+        } catch (error) {
+            console.error('Error deleting department:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error deleting department',
+                error: error.message
+            });
+        }
+    }
+
+    // Get department details with faculty and DPRC info
+    static async getDepartmentDetails(req, res) {
+        try {
+            const { id } = req.params;
+
+            const result = await pool.query(`
+                SELECT * FROM department_management_view WHERE id = $1
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Department not found'
+                });
+            }
+
+            // Get faculty members
+            const facultyResult = await pool.query(`
+                SELECT 
+                    f.*,
+                    CASE 
+                        WHEN dma.role_in_committee = 'chair' THEN true
+                        ELSE false
+                    END as is_dprc_chair,
+                    dma.role_in_committee as dprc_role
+                FROM faculty f
+                LEFT JOIN dprc_member_assignments dma ON f.id = dma.faculty_id AND dma.is_active = true
+                LEFT JOIN dprc_committees dp ON dma.dprc_committee_id = dp.id AND dp.department_id = $1
+                WHERE f.department_id = $1 AND f.is_active = true
+                ORDER BY f.last_name, f.first_name
+            `, [id]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...result.rows[0],
+                    faculty_members: facultyResult.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching department details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching department details',
+                error: error.message
+            });
+        }
+    }
+
+    // DPRC Management Functions
+    
+    // Create DPRC for a department
+    static async createDPRC(req, res) {
+        try {
+            const { department_id, committee_name, chair_faculty_id, members, meeting_schedule } = req.body;
+
+            if (!department_id || !committee_name || !chair_faculty_id || !members || members.length < 4) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Department ID, committee name, chair, and at least 4 members are required'
+                });
+            }
+
+            // Check if department can form DPRC
+            const canFormResult = await pool.query('SELECT can_form_dprc($1) as can_form', [department_id]);
+            if (!canFormResult.rows[0].can_form) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Department does not have enough faculty members to form DPRC (minimum 4 required)'
+                });
+            }
+
+            // Check if DPRC already exists for this department
+            const existingDPRC = await pool.query(`
+                SELECT id FROM dprc_committees 
+                WHERE department_id = $1 AND is_active = true
+            `, [department_id]);
+
+            if (existingDPRC.rows.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'DPRC already exists for this department'
+                });
+            }
+
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Create DPRC committee
+                const dprcResult = await client.query(`
+                    INSERT INTO dprc_committees (
+                        department_id, committee_name, chair_faculty_id, members, 
+                        meeting_schedule, formed_by
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING *
+                `, [department_id, committee_name, chair_faculty_id, JSON.stringify(members), meeting_schedule, req.user.id]);
+
+                const dprcId = dprcResult.rows[0].id;
+
+                // Assign chair
+                await client.query(`
+                    INSERT INTO dprc_member_assignments (
+                        dprc_committee_id, faculty_id, role_in_committee, assigned_by
+                    ) VALUES ($1, $2, 'chair', $3)
+                `, [dprcId, chair_faculty_id, req.user.id]);
+
+                // Assign members
+                for (const member of members) {
+                    if (member.faculty_id !== chair_faculty_id) {
+                        await client.query(`
+                            INSERT INTO dprc_member_assignments (
+                                dprc_committee_id, faculty_id, role_in_committee, assigned_by
+                            ) VALUES ($1, $2, $3, $4)
+                        `, [dprcId, member.faculty_id, member.role || 'member', req.user.id]);
+                    }
+                }
+
+                // Update faculty roles
+                await client.query(`
+                    INSERT INTO faculty_roles (faculty_id, role, department_id, assigned_by)
+                    VALUES ($1, 'dprc_chair', $2, $3)
+                `, [chair_faculty_id, department_id, req.user.id]);
+
+                for (const member of members) {
+                    if (member.faculty_id !== chair_faculty_id) {
+                        await client.query(`
+                            INSERT INTO faculty_roles (faculty_id, role, department_id, assigned_by)
+                            VALUES ($1, 'dprc_member', $2, $3)
+                        `, [member.faculty_id, department_id, req.user.id]);
+                    }
+                }
+
+                await client.query('COMMIT');
+
+                res.status(201).json({
+                    success: true,
+                    message: 'DPRC created successfully',
+                    data: dprcResult.rows[0]
+                });
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Error creating DPRC:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error creating DPRC',
+                error: error.message
+            });
+        }
+    }
+
+    // Get DPRC details
+    static async getDPRCDetails(req, res) {
+        try {
+            const { id } = req.params;
+
+            const result = await pool.query(`
+                SELECT 
+                    dp.*,
+                    d.dept_name,
+                    f.first_name || ' ' || f.last_name as chair_name,
+                    f.email as chair_email
+                FROM dprc_committees dp
+                JOIN departments d ON dp.department_id = d.id
+                JOIN faculty f ON dp.chair_faculty_id = f.id
+                WHERE dp.id = $1
+            `, [id]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'DPRC not found'
+                });
+            }
+
+            // Get committee members
+            const membersResult = await pool.query(`
+                SELECT 
+                    dma.*,
+                    f.first_name || ' ' || f.last_name as member_name,
+                    f.email as member_email,
+                    f.designation,
+                    f.research_interests
+                FROM dprc_member_assignments dma
+                JOIN faculty f ON dma.faculty_id = f.id
+                WHERE dma.dprc_committee_id = $1 AND dma.is_active = true
+                ORDER BY 
+                    CASE dma.role_in_committee 
+                        WHEN 'chair' THEN 1 
+                        WHEN 'secretary' THEN 2 
+                        ELSE 3 
+                    END,
+                    f.last_name
+            `, [id]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...result.rows[0],
+                    committee_members: membersResult.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching DPRC details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching DPRC details',
+                error: error.message
+            });
+        }
+    }
+
+    // Update DPRC
+    static async updateDPRC(req, res) {
+        try {
+            const { id } = req.params;
+            const { committee_name, chair_faculty_id, members, meeting_schedule, is_active } = req.body;
+
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Update DPRC committee
+                const result = await client.query(`
+                    UPDATE dprc_committees 
+                    SET committee_name = COALESCE($1, committee_name),
+                        chair_faculty_id = COALESCE($2, chair_faculty_id),
+                        members = COALESCE($3, members),
+                        meeting_schedule = COALESCE($4, meeting_schedule),
+                        is_active = COALESCE($5, is_active),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $6
+                    RETURNING *
+                `, [committee_name, chair_faculty_id, members ? JSON.stringify(members) : null, 
+                    meeting_schedule, is_active, id]);
+
+                if (result.rows.length === 0) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({
+                        success: false,
+                        message: 'DPRC not found'
+                    });
+                }
+
+                // If members are updated, update assignments
+                if (members) {
+                    // Deactivate old assignments
+                    await client.query(`
+                        UPDATE dprc_member_assignments 
+                        SET is_active = false
+                        WHERE dprc_committee_id = $1
+                    `, [id]);
+
+                    // Add new assignments
+                    if (chair_faculty_id) {
+                        await client.query(`
+                            INSERT INTO dprc_member_assignments (
+                                dprc_committee_id, faculty_id, role_in_committee, assigned_by
+                            ) VALUES ($1, $2, 'chair', $3)
+                            ON CONFLICT (dprc_committee_id, faculty_id, is_active) 
+                            DO UPDATE SET is_active = true, role_in_committee = 'chair'
+                        `, [id, chair_faculty_id, req.user.id]);
+                    }
+
+                    for (const member of members) {
+                        if (member.faculty_id !== chair_faculty_id) {
+                            await client.query(`
+                                INSERT INTO dprc_member_assignments (
+                                    dprc_committee_id, faculty_id, role_in_committee, assigned_by
+                                ) VALUES ($1, $2, $3, $4)
+                                ON CONFLICT (dprc_committee_id, faculty_id, is_active) 
+                                DO UPDATE SET is_active = true, role_in_committee = $3
+                            `, [id, member.faculty_id, member.role || 'member', req.user.id]);
+                        }
+                    }
+                }
+
+                await client.query('COMMIT');
+
+                res.json({
+                    success: true,
+                    message: 'DPRC updated successfully',
+                    data: result.rows[0]
+                });
+
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            } finally {
+                client.release();
+            }
+
+        } catch (error) {
+            console.error('Error updating DPRC:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error updating DPRC',
+                error: error.message
+            });
+        }
+    }
+
+    // Get all DPRCs
+    static async getAllDPRCs(req, res) {
+        try {
+            const result = await pool.query(`
+                SELECT 
+                    dp.*,
+                    d.dept_name,
+                    d.dept_code,
+                    f.first_name || ' ' || f.last_name as chair_name,
+                    COUNT(dma.id) as member_count
+                FROM dprc_committees dp
+                JOIN departments d ON dp.department_id = d.id
+                JOIN faculty f ON dp.chair_faculty_id = f.id
+                LEFT JOIN dprc_member_assignments dma ON dp.id = dma.dprc_committee_id AND dma.is_active = true
+                WHERE dp.is_active = true
+                GROUP BY dp.id, d.dept_name, d.dept_code, f.first_name, f.last_name
+                ORDER BY d.dept_name
+            `);
+
+            res.json({
+                success: true,
+                data: result.rows
+            });
+
+        } catch (error) {
+            console.error('Error fetching DPRCs:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching DPRCs',
+                error: error.message
+            });
+        }
+    }
+
+    // Get faculty available for DPRC assignment
+    static async getAvailableFaculty(req, res) {
+        try {
+            const { department_id } = req.query;
+
+            let whereClause = 'WHERE f.is_active = true AND f.can_supervise = true';
+            const params = [];
+
+            if (department_id) {
+                whereClause += ' AND f.department_id = $1';
+                params.push(department_id);
+            }
+
+            const result = await pool.query(`
+                SELECT 
+                    f.*,
+                    d.dept_name,
+                    CASE 
+                        WHEN dma.id IS NOT NULL THEN true 
+                        ELSE false 
+                    END as is_dprc_member,
+                    dma.role_in_committee as current_dprc_role
+                FROM faculty f
+                LEFT JOIN departments d ON f.department_id = d.id
+                LEFT JOIN dprc_member_assignments dma ON f.id = dma.faculty_id AND dma.is_active = true
+                ${whereClause}
+                ORDER BY f.last_name, f.first_name
+            `, params);
+
+            res.json({
+                success: true,
+                data: result.rows
+            });
+
+        } catch (error) {
+            console.error('Error fetching available faculty:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching available faculty',
                 error: error.message
             });
         }
@@ -1184,6 +1712,7 @@ class AdminController {
                     d.dept_name,
                     CASE 
                         WHEN fs.dec_approval_status = 'pending' THEN 'dec_approval'
+                        WHEN fs.dprc_approval_status = 'pending' THEN 'dprc_approval'
                         WHEN fs.supervisor_approval_status = 'pending' THEN 'supervisor_approval'
                         WHEN fs.gec_approval_status = 'pending' THEN 'gec_approval'
                         WHEN fs.hod_approval_status = 'pending' THEN 'hod_approval'
@@ -1197,6 +1726,7 @@ class AdminController {
                 LEFT JOIN departments d ON u.department_id = d.id
                 WHERE (
                     fs.dec_approval_status = 'pending' OR
+                    fs.dprc_approval_status = 'pending' OR
                     fs.supervisor_approval_status = 'pending' OR
                     fs.gec_approval_status = 'pending' OR
                     fs.hod_approval_status = 'pending' OR
@@ -1243,6 +1773,12 @@ class AdminController {
                     approverField = 'dec_approved_by';
                     timestampField = 'dec_approved_at';
                     commentsField = 'dec_comments';
+                    break;
+                case 'dprc':
+                    approvalField = 'dprc_approval_status';
+                    approverField = 'dprc_approved_by';
+                    timestampField = 'dprc_approved_at';
+                    commentsField = 'dprc_comments';
                     break;
                 case 'supervisor':
                     approvalField = 'supervisor_approval_status';
@@ -1295,8 +1831,8 @@ class AdminController {
             // Check if all required approvals are complete
             const submission = result.rows[0];
             const formTypeQuery = `
-                SELECT requires_dec_approval, requires_supervisor_approval, requires_gec_approval, 
-                       requires_hod_approval, requires_chairperson_approval
+                SELECT requires_dec_approval, requires_dprc_approval, requires_supervisor_approval, 
+                       requires_gec_approval, requires_hod_approval, requires_chairperson_approval
                 FROM form_types WHERE id = $1
             `;
             const formTypeResult = await pool.query(formTypeQuery, [submission.form_type_id]);
@@ -1306,6 +1842,7 @@ class AdminController {
                 let allApproved = true;
                 
                 if (formType.requires_dec_approval && submission.dec_approval_status !== 'approved') allApproved = false;
+                if (formType.requires_dprc_approval && submission.dprc_approval_status !== 'approved') allApproved = false;
                 if (formType.requires_supervisor_approval && submission.supervisor_approval_status !== 'approved') allApproved = false;
                 if (formType.requires_gec_approval && submission.gec_approval_status !== 'approved') allApproved = false;
                 if (formType.requires_hod_approval && submission.hod_approval_status !== 'approved') allApproved = false;
