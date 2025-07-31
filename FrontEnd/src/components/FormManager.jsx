@@ -12,7 +12,7 @@ import {
   getStatusColor,
   getWorkflowStageDisplayName
 } from '../utils/api';
-import { PHDEE02AForm } from './Forms/PHDEE02-A';
+import PHDEE02A from './Forms/PHDEE02-A';
 import PHDEE02B from './Forms/PHDEE02-B';
 import PHDEE02C from './Forms/PHDEE02-C';
 import PHDEE03 from './Forms/PHDEE03';
@@ -223,7 +223,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
   
     switch (formCode) {
       case 'PHDEE02-A':
-        return <PHDEE02AForm {...commonProps} />;
+        return <PHDEE02A {...commonProps} />;
       case 'PHDEE02-B':
         return <PHDEE02B {...commonProps}/>;
       case 'PHDEE02-C':
