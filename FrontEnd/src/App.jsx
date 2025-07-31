@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Signup from './components/Signup'
-import Dashboard from './components/Dashboard'
+import Dashboard from './components/Dashboard.jsx'
 import SupervisorDashboard from './components/SupervisorDashboard'
 import AdminDashboard from './components/AdminDashboard'
 import FormManager from './components/FormManager'
@@ -210,6 +210,8 @@ function App() {
     )
   }
 
+  // Add debug output before return
+  console.log('user:', user, 'currentPage:', currentPage);
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar
