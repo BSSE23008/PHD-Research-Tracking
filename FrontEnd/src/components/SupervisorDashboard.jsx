@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   getFormSubmissions,
+  getFacultyPendingApprovals,
   approveFormSubmission,
   getAllStudents,
   getNotifications,
@@ -41,8 +42,9 @@ const SupervisorDashboard = ({ user }) => {
     setLoading(true);
     setError(null);
     try {
-      const [formsResult, studentsResult, notificationsResult] = await Promise.all([
+      const [formsResult, pendingApprovalsResult, studentsResult, notificationsResult] = await Promise.all([
         getFormSubmissions({ supervisor_id: user.id }),
+        getFacultyPendingApprovals(user.id),
         getAllStudents({ supervisor_id: user.id }),
         getNotifications({ page: 1, limit: 10 })
       ]);
@@ -50,12 +52,22 @@ const SupervisorDashboard = ({ user }) => {
       if (formsResult.success) {
         const submissions = formsResult.data.submissions || [];
         setAllSubmissions(submissions);
-        setPendingForms(submissions.filter(s => s.supervisor_approval_status === 'pending'));
+        
+        // Use faculty pending approvals for more accurate data
+        if (pendingApprovalsResult.success) {
+          setPendingForms(pendingApprovalsResult.data.filter(a => a.approval_stage === 'supervisor'));
+        } else {
+          setPendingForms(submissions.filter(s => s.supervisor_approval_status === 'pending'));
+        }
         
         // Calculate stats
+        const pendingCount = pendingApprovalsResult.success ? 
+          pendingApprovalsResult.data.filter(a => a.approval_stage === 'supervisor').length : 
+          submissions.filter(s => s.supervisor_approval_status === 'pending').length;
+          
         setStats({
           totalStudents: studentsResult.success ? studentsResult.data.students?.length || 0 : 0,
-          pendingApprovals: submissions.filter(s => s.supervisor_approval_status === 'pending').length,
+          pendingApprovals: pendingCount,
           approvedForms: submissions.filter(s => s.supervisor_approval_status === 'approved').length,
           rejectedForms: submissions.filter(s => s.supervisor_approval_status === 'rejected').length,
           totalSubmissions: submissions.length,

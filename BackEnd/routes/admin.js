@@ -41,6 +41,7 @@ router.get('/reports/progress', AdminController.getProgressReport);
 router.post('/forms/submissions/:submissionId/approve', AdminController.approveFormSubmission);
 router.post('/forms/submissions/:submissionId/reject', AdminController.rejectFormSubmission);
 router.delete('/forms/submissions/:submissionId', AdminController.deleteFormSubmission);
+router.get('/forms/submissions/:submissionId', AdminController.getFormSubmissionDetails);
 
 // Comprehensive exam routes
 router.get('/exams', AdminController.getComprehensiveExams);

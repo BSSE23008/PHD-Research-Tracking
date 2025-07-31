@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import {
-  getPendingApprovals,
+  getFacultyPendingApprovals,
   getAllStudents,
   getFormSubmissions,
   approveFormSubmission,
   getAllGECCommittees,
+  getFormSubmissionDetails,
   formatDate,
   getStatusColor
 } from '../utils/api';
+import FormViewer from './FormViewer';
 
 const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [showFormViewer, setShowFormViewer] = useState(false);
   const [dashboardData, setDashboardData] = useState({
     pendingApprovals: [],
     myStudents: [],
@@ -33,7 +37,7 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
         submissionsResult,
         gecResult
       ] = await Promise.all([
-        getPendingApprovals({ faculty_id: user.id }),
+        getFacultyPendingApprovals(user.id),
         getAllStudents({ supervisor_id: user.id }),
         getFormSubmissions({ user_type: 'faculty' }),
         user.roles?.includes('gec_member') ? getAllGECCommittees() : Promise.resolve({ success: true, data: [] })
@@ -70,12 +74,33 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
       if (result.success) {
         alert(`Form ${action} successfully!`);
         loadDashboardData();
+        setShowFormViewer(false);
+        setSelectedSubmission(null);
       } else {
         alert(`Error: ${result.message}`);
       }
     } catch (error) {
       alert('Error processing approval: ' + error.message);
     }
+  };
+
+  const handleViewDetails = async (submissionId) => {
+    try {
+      const result = await getFormSubmissionDetails(submissionId, 'faculty');
+      if (result.success) {
+        setSelectedSubmission(result.data);
+        setShowFormViewer(true);
+      } else {
+        alert('Error loading form details: ' + result.message);
+      }
+    } catch (error) {
+      alert('Error loading form details: ' + error.message);
+    }
+  };
+
+  const handleCloseFormViewer = () => {
+    setShowFormViewer(false);
+    setSelectedSubmission(null);
   };
 
   const renderOverview = () => (
@@ -192,6 +217,7 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
               approval={approval}
               onApprove={(comments) => handleApproval(approval.id, 'approve', comments)}
               onReject={(comments) => handleApproval(approval.id, 'reject', comments)}
+              onViewDetails={handleViewDetails}
             />
           ))}
         </div>
@@ -390,6 +416,17 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
           </div>
         )}
       </div>
+
+      {/* Form Viewer Modal */}
+      {showFormViewer && selectedSubmission && (
+        <FormViewer
+          submission={selectedSubmission}
+          onClose={handleCloseFormViewer}
+          onApprove={(submissionId) => handleApproval(submissionId, 'approve')}
+          onReject={(submissionId) => handleApproval(submissionId, 'reject')}
+          userType="faculty"
+        />
+      )}
     </div>
   );
 };
@@ -423,7 +460,7 @@ const QuickAction = ({ title, description, onClick, color = 'blue' }) => (
   </button>
 );
 
-const ApprovalCard = ({ approval, onApprove, onReject }) => {
+const ApprovalCard = ({ approval, onApprove, onReject, onViewDetails }) => {
   const [comments, setComments] = useState('');
   const [showComments, setShowComments] = useState(false);
 
@@ -444,14 +481,14 @@ const ApprovalCard = ({ approval, onApprove, onReject }) => {
         </span>
       </div>
 
-      {approval.form_data && (
-        <div className="mb-4 p-4 bg-gray-50 rounded">
-          <h4 className="font-medium mb-2">Form Summary</h4>
-          <p className="text-sm text-gray-700">
-            {JSON.stringify(approval.form_data).slice(0, 200)}...
-          </p>
-        </div>
-      )}
+      <div className="flex justify-between items-center mb-4">
+        <button
+          onClick={() => onViewDetails(approval.id)}
+          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+        >
+          📄 View Full Details
+        </button>
+      </div>
 
       <div className="flex justify-between items-center">
         <button

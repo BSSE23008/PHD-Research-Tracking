@@ -5,15 +5,19 @@ import {
   getAllFaculty,
   getAdminDashboardOverview,
   getFormSubmissions,
+  getPendingApprovals,
+  processApproval,
   getAllGECCommittees,
   createUser,
   updateUserStatus,
   assignSupervisor,
   updateStudentWorkflowStage,
   getAllDepartments,
+  getFormSubmissionDetails,
   formatDate,
   getStatusColor
 } from '../utils/api';
+import FormViewer from './FormViewer';
 
 const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
@@ -24,12 +28,15 @@ const AdminDashboard = () => {
     students: [],
     faculty: [],
     submissions: [],
+    pendingApprovals: [],
     committees: [],
     departments: [],
     systemStats: {}
   });
   const [showUserModal, setShowUserModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [showFormViewer, setShowFormViewer] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -44,6 +51,7 @@ const AdminDashboard = () => {
         studentsResult,
         facultyResult,
         submissionsResult,
+        pendingApprovalsResult,
         committeesResult,
         departmentsResult
       ] = await Promise.all([
@@ -52,6 +60,7 @@ const AdminDashboard = () => {
         getAllStudents(),
         getAllFaculty(),
         getFormSubmissions({ admin: true }),
+        getPendingApprovals(),
         getAllGECCommittees(),
         getAllDepartments()
       ]);
@@ -62,6 +71,7 @@ const AdminDashboard = () => {
         students: studentsResult.success ? studentsResult.data : [],
         faculty: facultyResult.success ? facultyResult.data : [],
         submissions: submissionsResult.success ? submissionsResult.data.submissions || [] : [],
+        pendingApprovals: pendingApprovalsResult.success ? pendingApprovalsResult.data : [],
         committees: committeesResult.success ? committeesResult.data : [],
         departments: departmentsResult.success ? departmentsResult.data : [],
         systemStats: calculateSystemStats(
@@ -126,6 +136,43 @@ const AdminDashboard = () => {
     } catch (error) {
       alert('Error: ' + error.message);
     }
+  };
+
+  const handleApproval = async (submissionId, action, approvalStage = 'dec') => {
+    try {
+      const comments = prompt(`Enter ${action === 'approve' ? 'approval' : 'rejection'} comments (optional):`);
+      const result = await processApproval(submissionId, { action, comments, approvalStage });
+      
+      if (result.success) {
+        alert(`Form ${action}d successfully!`);
+        loadDashboardData();
+        setShowFormViewer(false);
+        setSelectedSubmission(null);
+      } else {
+        alert(`Error: ${result.message}`);
+      }
+    } catch (error) {
+      alert('Error processing approval: ' + error.message);
+    }
+  };
+
+  const handleViewDetails = async (submissionId) => {
+    try {
+      const result = await getFormSubmissionDetails(submissionId, 'admin');
+      if (result.success) {
+        setSelectedSubmission(result.data);
+        setShowFormViewer(true);
+      } else {
+        alert('Error loading form details: ' + result.message);
+      }
+    } catch (error) {
+      alert('Error loading form details: ' + error.message);
+    }
+  };
+
+  const handleCloseFormViewer = () => {
+    setShowFormViewer(false);
+    setSelectedSubmission(null);
   };
 
   const renderOverview = () => (
@@ -338,6 +385,75 @@ const AdminDashboard = () => {
     </div>
   );
 
+  const renderPendingApprovals = () => (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Pending Approvals</h2>
+        <button
+          onClick={loadDashboardData}
+          className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {dashboardData.pendingApprovals.length === 0 ? (
+        <div className="bg-white rounded-lg shadow p-8 text-center">
+          <div className="text-4xl mb-4">✅</div>
+          <h3 className="text-lg font-medium mb-2">All caught up!</h3>
+          <p className="text-gray-600">No pending approvals at the moment.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {dashboardData.pendingApprovals.map(approval => (
+            <div key={approval.id} className="bg-white rounded-lg shadow p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="font-semibold text-gray-900">{approval.form_name}</h4>
+                  <p className="text-sm text-gray-600">
+                    Submitted by {approval.student_name} ({approval.student_id}) on {formatDate(approval.submitted_at)}
+                  </p>
+                  <p className="text-sm text-gray-500">Department: {approval.dept_name}</p>
+                </div>
+                <div className="text-right">
+                  <span className={`px-2 py-1 text-xs rounded-full ${
+                    approval.approval_stage === 'dec_approval' ? 'bg-blue-100 text-blue-800' :
+                    approval.approval_stage === 'supervisor_approval' ? 'bg-yellow-100 text-yellow-800' :
+                    approval.approval_stage === 'gec_approval' ? 'bg-purple-100 text-purple-800' :
+                    approval.approval_stage === 'hod_approval' ? 'bg-green-100 text-green-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {approval.approval_stage.replace('_', ' ').toUpperCase()}
+                  </span>
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                <button 
+                  onClick={() => handleApproval(approval.id, 'approve', 'dec')}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                >
+                  Approve
+                </button>
+                <button 
+                  onClick={() => handleApproval(approval.id, 'reject', 'dec')}
+                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                >
+                  Reject
+                </button>
+                <button 
+                  onClick={() => handleViewDetails(approval.id)}
+                  className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  View Details
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   const renderFormManagement = () => (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -527,6 +643,7 @@ const AdminDashboard = () => {
             {[
               { id: 'overview', name: 'Overview', icon: '📊' },
               { id: 'users', name: 'Users', icon: '👥', count: dashboardData.systemStats.totalUsers },
+              { id: 'approvals', name: 'Pending Approvals', icon: '⏳', count: dashboardData.pendingApprovals.length },
               { id: 'forms', name: 'Forms', icon: '📋', count: dashboardData.systemStats.pendingSubmissions },
               { id: 'committees', name: 'GEC', icon: '🏛️', count: dashboardData.committees.length },
               { id: 'settings', name: 'Settings', icon: '⚙️' }
@@ -557,6 +674,7 @@ const AdminDashboard = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'users' && renderUserManagement()}
+        {activeTab === 'approvals' && renderPendingApprovals()}
         {activeTab === 'forms' && renderFormManagement()}
         {activeTab === 'committees' && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
@@ -588,6 +706,17 @@ const AdminDashboard = () => {
               handleUserAction('create', null, userData);
             }
           }}
+        />
+      )}
+
+      {/* Form Viewer Modal */}
+      {showFormViewer && selectedSubmission && (
+        <FormViewer
+          submission={selectedSubmission}
+          onClose={handleCloseFormViewer}
+          onApprove={(submissionId) => handleApproval(submissionId, 'approve')}
+          onReject={(submissionId) => handleApproval(submissionId, 'reject')}
+          userType="admin"
         />
       )}
     </div>

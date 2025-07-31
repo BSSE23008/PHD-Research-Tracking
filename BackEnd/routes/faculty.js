@@ -33,4 +33,10 @@ router.get('/:faculty_id/pending-approvals', authenticateToken, FacultyControlle
 // Approve/Reject form submission
 router.post('/approve', authenticateToken, FacultyController.approveForm);
 
+// Alternative approval route that matches frontend expectation
+router.post('/forms/submissions/:submissionId/:action', authenticateToken, FacultyController.approveForm);
+
+// Get form submission details for viewing
+router.get('/forms/submissions/:submissionId', authenticateToken, FacultyController.getFormSubmissionDetails);
+
 module.exports = router; 

@@ -224,12 +224,48 @@ class AdminController {
     // Get all students with detailed information
     static async getAllStudents(req, res) {
         try {
-            const { page = 1, limit = 20, department, semester, search } = req.query;
+            const { page = 1, limit = 20, department, semester, search, supervisor_id } = req.query;
             const offset = (page - 1) * limit;
 
             let whereClause = "WHERE u.role = 'student'";
             const params = [];
             let paramCount = 0;
+
+            // Handle supervisor_id parameter (convert user ID to faculty ID if needed)
+            if (supervisor_id) {
+                let actualFacultyId = supervisor_id;
+                
+                // Check if it's a user ID (faculty user in users table)
+                const userCheckQuery = `
+                    SELECT f.id as faculty_id 
+                    FROM users u
+                    JOIN faculty f ON u.email = f.email
+                    WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+                `;
+                
+                const userCheckResult = await pool.query(userCheckQuery, [supervisor_id]);
+                if (userCheckResult.rows.length > 0) {
+                    actualFacultyId = userCheckResult.rows[0].faculty_id;
+                    console.log(`Converted supervisor user ID ${supervisor_id} to faculty ID ${actualFacultyId}`);
+                } else {
+                    // Check if it's already a faculty ID
+                    const facultyCheckQuery = `
+                        SELECT id FROM faculty WHERE id = $1 AND is_active = true
+                    `;
+                    const facultyCheckResult = await pool.query(facultyCheckQuery, [supervisor_id]);
+                    if (facultyCheckResult.rows.length === 0) {
+                        return res.status(404).json({
+                            success: false,
+                            message: 'Faculty not found'
+                        });
+                    }
+                    actualFacultyId = supervisor_id;
+                }
+                
+                paramCount++;
+                whereClause += ` AND (u.primary_supervisor_id = $${paramCount} OR u.co_supervisor_id = $${paramCount})`;
+                params.push(actualFacultyId);
+            }
 
             if (department) {
                 paramCount++;
@@ -420,7 +456,9 @@ class AdminController {
 
             if (facultyCheck.rows.length > 0) {
                 faculty = facultyCheck.rows[0];
+                console.log('Found faculty in faculty table:', faculty);
             } else {
+                console.log('Faculty not found in faculty table, checking users table...');
                 // Check if it's a faculty user in the users table
                 const facultyUserCheck = await pool.query(`
                     SELECT u.id as user_id, f.id as faculty_id, f.max_phd_students, f.current_phd_students 
@@ -437,7 +475,23 @@ class AdminController {
                         current_phd_students: result.current_phd_students
                     };
                     actualFacultyId = result.faculty_id; // Use the faculty table ID for foreign key
+                    console.log('Found faculty in users table:', faculty);
                 } else {
+                    // Let's check what faculty records exist for debugging
+                    const allFacultyCheck = await pool.query(
+                        'SELECT id, first_name, last_name, email, is_active, can_supervise FROM faculty WHERE id = $1',
+                        [supervisor_id]
+                    );
+                    
+                    if (allFacultyCheck.rows.length > 0) {
+                        const facultyRecord = allFacultyCheck.rows[0];
+                        console.log('Faculty record exists but has issues:', facultyRecord);
+                        return res.status(400).json({
+                            success: false,
+                            message: `Faculty found but ${!facultyRecord.is_active ? 'is not active' : 'cannot supervise'}`
+                        });
+                    }
+                    
                     return res.status(404).json({
                         success: false,
                         message: 'Faculty not found or cannot supervise'
@@ -1124,15 +1178,30 @@ class AdminController {
                     fs.id,
                     fs.submitted_at,
                     ft.form_name,
+                    ft.form_code,
                     u.first_name || ' ' || u.last_name as student_name,
                     u.student_id,
                     d.dept_name,
+                    CASE 
+                        WHEN fs.dec_approval_status = 'pending' THEN 'dec_approval'
+                        WHEN fs.supervisor_approval_status = 'pending' THEN 'supervisor_approval'
+                        WHEN fs.gec_approval_status = 'pending' THEN 'gec_approval'
+                        WHEN fs.hod_approval_status = 'pending' THEN 'hod_approval'
+                        WHEN fs.chairperson_approval_status = 'pending' THEN 'chairperson_approval'
+                        ELSE 'pending'
+                    END as approval_stage,
                     'pending' as status
                 FROM form_submissions fs
                 JOIN form_types ft ON fs.form_type_id = ft.id
                 JOIN users u ON fs.user_id = u.id
                 LEFT JOIN departments d ON u.department_id = d.id
-                WHERE fs.final_approval_status = 'pending'
+                WHERE (
+                    fs.dec_approval_status = 'pending' OR
+                    fs.supervisor_approval_status = 'pending' OR
+                    fs.gec_approval_status = 'pending' OR
+                    fs.hod_approval_status = 'pending' OR
+                    fs.chairperson_approval_status = 'pending'
+                )
                 ORDER BY fs.submitted_at ASC
             `);
 
@@ -1154,7 +1223,7 @@ class AdminController {
     static async processApproval(req, res) {
         try {
             const { approvalId } = req.params;
-            const { action, comments } = req.body; // action: 'approve' or 'reject'
+            const { action, comments, approvalStage = 'dec' } = req.body; // action: 'approve' or 'reject'
 
             if (!['approve', 'reject'].includes(action)) {
                 return res.status(400).json({
@@ -1164,14 +1233,52 @@ class AdminController {
             }
 
             const status = action === 'approve' ? 'approved' : 'rejected';
-            const field = action === 'approve' ? 'approved_by' : 'rejected_by';
-            const timestampField = action === 'approve' ? 'approved_at' : 'rejected_at';
-            const commentsField = action === 'approve' ? 'approval_comments' : 'rejection_reason';
+            
+            // Determine which approval field to update based on approval stage
+            let approvalField, approverField, timestampField, commentsField;
+            
+            switch (approvalStage) {
+                case 'dec':
+                    approvalField = 'dec_approval_status';
+                    approverField = 'dec_approved_by';
+                    timestampField = 'dec_approved_at';
+                    commentsField = 'dec_comments';
+                    break;
+                case 'supervisor':
+                    approvalField = 'supervisor_approval_status';
+                    approverField = 'supervisor_approved_by';
+                    timestampField = 'supervisor_approved_at';
+                    commentsField = 'supervisor_comments';
+                    break;
+                case 'gec':
+                    approvalField = 'gec_approval_status';
+                    approverField = 'gec_approved_by';
+                    timestampField = 'gec_approved_at';
+                    commentsField = 'gec_comments';
+                    break;
+                case 'hod':
+                    approvalField = 'hod_approval_status';
+                    approverField = 'hod_approved_by';
+                    timestampField = 'hod_approved_at';
+                    commentsField = 'hod_comments';
+                    break;
+                case 'chairperson':
+                    approvalField = 'chairperson_approval_status';
+                    approverField = 'chairperson_approved_by';
+                    timestampField = 'chairperson_approved_at';
+                    commentsField = 'chairperson_comments';
+                    break;
+                default:
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid approval stage'
+                    });
+            }
 
             const result = await pool.query(`
                 UPDATE form_submissions 
-                SET final_approval_status = $1,
-                    ${field} = $2,
+                SET ${approvalField} = $1,
+                    ${approverField} = $2,
                     ${commentsField} = $3,
                     ${timestampField} = CURRENT_TIMESTAMP
                 WHERE id = $4
@@ -1185,9 +1292,38 @@ class AdminController {
                 });
             }
 
+            // Check if all required approvals are complete
+            const submission = result.rows[0];
+            const formTypeQuery = `
+                SELECT requires_dec_approval, requires_supervisor_approval, requires_gec_approval, 
+                       requires_hod_approval, requires_chairperson_approval
+                FROM form_types WHERE id = $1
+            `;
+            const formTypeResult = await pool.query(formTypeQuery, [submission.form_type_id]);
+            
+            if (formTypeResult.rows.length > 0) {
+                const formType = formTypeResult.rows[0];
+                let allApproved = true;
+                
+                if (formType.requires_dec_approval && submission.dec_approval_status !== 'approved') allApproved = false;
+                if (formType.requires_supervisor_approval && submission.supervisor_approval_status !== 'approved') allApproved = false;
+                if (formType.requires_gec_approval && submission.gec_approval_status !== 'approved') allApproved = false;
+                if (formType.requires_hod_approval && submission.hod_approval_status !== 'approved') allApproved = false;
+                if (formType.requires_chairperson_approval && submission.chairperson_approval_status !== 'approved') allApproved = false;
+                
+                if (allApproved) {
+                    // Update final approval status
+                    await pool.query(`
+                        UPDATE form_submissions 
+                        SET final_approval_status = 'approved', final_approved_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [approvalId]);
+                }
+            }
+
             res.json({
                 success: true,
-                message: `Approval ${action}d successfully`,
+                message: `${approvalStage.toUpperCase()} approval ${action}d successfully`,
                 data: result.rows[0]
             });
 
@@ -1359,6 +1495,98 @@ class AdminController {
             res.status(500).json({
                 success: false,
                 message: 'Error updating user status',
+                error: error.message
+            });
+        }
+    }
+
+    // Get form submission details for viewing (Admin)
+    static async getFormSubmissionDetails(req, res) {
+        try {
+            const { submissionId } = req.params;
+
+            // Get detailed submission information
+            const query = `
+                SELECT 
+                    fs.*,
+                    ft.form_code,
+                    ft.form_name,
+                    ft.description,
+                    ft.workflow_stage,
+                    ft.form_schema,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id,
+                    u.current_semester,
+                    u.academic_year,
+                    d.dept_name as department,
+                    d.dept_code as department_code,
+                    f1.first_name || ' ' || f1.last_name as primary_supervisor_name,
+                    f1.email as primary_supervisor_email,
+                    f2.first_name || ' ' || f2.last_name as co_supervisor_name,
+                    f2.email as co_supervisor_email
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN faculty f1 ON u.primary_supervisor_id = f1.id
+                LEFT JOIN faculty f2 ON u.co_supervisor_id = f2.id
+                WHERE fs.id = $1
+            `;
+
+            const result = await pool.query(query, [submissionId]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Submission not found'
+                });
+            }
+
+            const submission = result.rows[0];
+
+            // Get attachments
+            const attachmentsQuery = `
+                SELECT id, file_name, file_type, upload_type, uploaded_at, is_verified, verification_comments
+                FROM form_attachments 
+                WHERE form_submission_id = $1
+                ORDER BY uploaded_at DESC
+            `;
+
+            const attachments = await pool.query(attachmentsQuery, [submissionId]);
+
+            // Get approval history
+            const historyQuery = `
+                SELECT 
+                    fah.approval_stage,
+                    fah.previous_status,
+                    fah.new_status,
+                    fah.comments,
+                    fah.action_date,
+                    f.first_name || ' ' || f.last_name as approved_by_name,
+                    f.email as approved_by_email
+                FROM form_approval_history fah
+                LEFT JOIN faculty f ON fah.approved_by = f.id
+                WHERE fah.form_submission_id = $1
+                ORDER BY fah.action_date DESC
+            `;
+
+            const history = await pool.query(historyQuery, [submissionId]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...submission,
+                    attachments: attachments.rows,
+                    approval_history: history.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching form submission details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch submission details',
                 error: error.message
             });
         }

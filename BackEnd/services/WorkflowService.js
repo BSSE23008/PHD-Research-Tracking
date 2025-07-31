@@ -105,7 +105,7 @@ class WorkflowService {
                     student_id, 
                     current_stage, 
                     academic_year, 
-                    semester
+                    current_semester
                 ) VALUES ($1, $2, $3, $4)
                 RETURNING *
             `;
@@ -114,7 +114,7 @@ class WorkflowService {
                 studentId, 
                 'supervision_consent', 
                 academicYear, 
-                1
+                '1st'
             ]);
 
             // Create welcome notification
@@ -323,7 +323,7 @@ class WorkflowService {
                     ft.form_name,
                     ft.description,
                     ft.requires_supervisor_approval,
-                    ft.requires_admin_approval,
+                    ft.requires_dec_approval,
                     ft.requires_gec_approval,
                     CASE 
                         WHEN fs.id IS NOT NULL THEN fs.status
@@ -616,6 +616,168 @@ class WorkflowService {
         } catch (error) {
             console.error('Error getting students requiring attention:', error);
             throw error;
+        }
+    }
+
+    // Handle onboarding form approval workflow
+    static async handleOnboardingApproval(submissionId, facultyId, action) {
+        try {
+            // Get the onboarding form submission details
+            const submissionQuery = `
+                SELECT 
+                    fs.user_id, fs.form_data,
+                    u.first_name, u.last_name, u.email, u.student_id,
+                    ft.form_code
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                WHERE fs.id = $1 AND ft.form_code = 'ONBOARDING-001'
+            `;
+            
+            const result = await pool.query(submissionQuery, [submissionId]);
+            if (result.rows.length === 0) {
+                return { success: false, message: 'Onboarding form not found' };
+            }
+            
+            const submission = result.rows[0];
+            
+            if (action === 'approved') {
+                // Create notification for supervisor to fill consent form
+                await pool.query(`
+                    INSERT INTO notifications (
+                        recipient_id, recipient_type, title, message, notification_type,
+                        action_required, action_url, related_form_id
+                    ) VALUES ($1, 'faculty', $2, $3, 'approval_request', true, $4, $5)
+                `, [
+                    facultyId,
+                    'Supervisor Consent Form Required',
+                    `You have approved the onboarding form for ${submission.first_name} ${submission.last_name} (${submission.student_id}). Please fill the Supervisor Consent Form (PHDEE02-A) to complete the supervision assignment.`,
+                    '/forms/PHDEE02-A',
+                    submissionId
+                ]);
+                
+                // DO NOT auto-finalize - keep it pending until consent form is submitted
+                console.log(`Onboarding form ${submissionId} approved - supervisor must fill consent form`);
+                
+                return { 
+                    success: true, 
+                    message: 'Onboarding approved. Supervisor must now fill consent form.',
+                    requiresConsentForm: true
+                };
+            }
+            
+            return { success: true };
+            
+        } catch (error) {
+            console.error('Error handling onboarding approval:', error);
+            return { success: false, message: 'Error processing onboarding approval' };
+        }
+    }
+
+    // Handle supervisor consent form submission
+    static async handleSupervisorConsentSubmission(submissionId, formData) {
+        try {
+            // Get the consent form details
+            const consentQuery = `
+                SELECT fs.user_id, fs.form_data
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                WHERE fs.id = $1 AND ft.form_code = 'PHDEE02-A'
+            `;
+            
+            const result = await pool.query(consentQuery, [submissionId]);
+            if (result.rows.length === 0) {
+                return { success: false, message: 'Consent form not found' };
+            }
+            
+            const consent = result.rows[0];
+            const studentId = consent.user_id;
+            const supervisorId = formData.supervisor_id || formData.faculty_id;
+            
+            if (!supervisorId) {
+                return { success: false, message: 'Supervisor ID not found in form data' };
+            }
+            
+            // Assign supervisor to student
+            await pool.query(`
+                UPDATE users 
+                SET primary_supervisor_id = $1, updated_at = CURRENT_TIMESTAMP
+                WHERE id = $2
+            `, [supervisorId, studentId]);
+            
+            // Update student workflow stage to GEC formation
+            await pool.query(`
+                UPDATE student_workflow_progress 
+                SET 
+                    current_stage = 'gec_formation',
+                    stage_start_date = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE student_id = $1
+            `, [studentId]);
+            
+            // Finalize any pending onboarding forms for this student
+            await pool.query(`
+                UPDATE form_submissions fs
+                SET 
+                    status = 'approved',
+                    final_approval_status = 'approved',
+                    final_approved_at = CURRENT_TIMESTAMP,
+                    last_updated_at = CURRENT_TIMESTAMP
+                FROM form_types ft
+                WHERE fs.form_type_id = ft.id 
+                AND ft.form_code = 'ONBOARDING-001' 
+                AND fs.user_id = $1
+                AND fs.status = 'submitted'
+            `, [studentId]);
+            
+            // Create notification for student
+            await pool.query(`
+                INSERT INTO notifications (
+                    recipient_id, recipient_type, title, message, notification_type
+                ) VALUES ($1, 'student', $2, $3, 'success')
+            `, [
+                studentId,
+                'Supervisor Assigned Successfully',
+                'Your supervisor has been assigned and you can now proceed to GEC formation. Please fill the GEC Formation Form when ready.'
+            ]);
+            
+            console.log(`Supervisor consent completed - student ${studentId} assigned to supervisor ${supervisorId}`);
+            
+            return { 
+                success: true, 
+                message: 'Supervisor assigned successfully. Student moved to GEC formation stage.',
+                studentId,
+                supervisorId
+            };
+            
+        } catch (error) {
+            console.error('Error handling supervisor consent:', error);
+            return { success: false, message: 'Error processing supervisor consent' };
+        }
+    }
+
+    // Handle GEC formation form submission
+    static async handleGECFormationSubmission(submissionId, formData) {
+        try {
+            // Get GEC members from form data
+            const gecMembers = formData.gec_members || [];
+            
+            if (!gecMembers || gecMembers.length === 0) {
+                return { success: false, message: 'No GEC members specified in form' };
+            }
+            
+            // After admin approval, create approval requests for all GEC members
+            // This will be called after admin approves the GEC formation form
+            
+            return { 
+                success: true, 
+                message: 'GEC formation form submitted. Awaiting admin approval.',
+                gecMembers
+            };
+            
+        } catch (error) {
+            console.error('Error handling GEC formation:', error);
+            return { success: false, message: 'Error processing GEC formation' };
         }
     }
 }

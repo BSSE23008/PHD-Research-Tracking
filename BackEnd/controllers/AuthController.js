@@ -385,7 +385,9 @@ class AuthController {
 
       if (facultyCheck.rows.length > 0) {
         faculty = facultyCheck.rows[0];
+        console.log('Found faculty in faculty table:', faculty);
       } else {
+        console.log('Faculty not found in faculty table, checking users table...');
         // Check if it's a faculty user in the users table
         const facultyUserCheck = await pool.query(`
           SELECT u.id as user_id, f.id as faculty_id, f.max_phd_students, f.current_phd_students 
@@ -402,7 +404,23 @@ class AuthController {
             current_phd_students: result.current_phd_students
           };
           actualFacultyId = result.faculty_id; // Use the faculty table ID for foreign key
+          console.log('Found faculty in users table:', faculty);
         } else {
+          // Let's check what faculty records exist for debugging
+          const allFacultyCheck = await pool.query(
+            'SELECT id, first_name, last_name, email, is_active, can_supervise FROM faculty WHERE id = $1',
+            [supervisor_id]
+          );
+          
+          if (allFacultyCheck.rows.length > 0) {
+            const facultyRecord = allFacultyCheck.rows[0];
+            console.log('Faculty record exists but has issues:', facultyRecord);
+            return res.status(400).json({
+              success: false,
+              message: `Faculty found but ${!facultyRecord.is_active ? 'is not active' : 'cannot supervise'}`
+            });
+          }
+          
           return res.status(404).json({
             success: false,
             message: 'Faculty not found or cannot supervise'

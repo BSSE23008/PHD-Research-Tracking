@@ -120,142 +120,22 @@ export const getFormTypes = async () => {
 export const getAvailableForms = async () => {
   const result = await apiRequest('/forms/available');
   
-  // If backend returns empty or no forms, provide default forms
-  if (!result.success || !result.data || result.data.length === 0) {
+  if (!result.success) {
     return {
-      success: true,
-      data: [
-        {
-          id: 1,
-          form_code: 'PHDEE02-A',
-          form_name: 'Supervisor Consent Form',
-          description: 'Form for obtaining supervisor consent for PhD research',
-          workflow_stage: 'supervision_consent',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 2,
-          form_code: 'PHDEE02-B',
-          form_name: 'GEC Formation Form',
-          description: 'Form for Graduate Examination Committee formation',
-          workflow_stage: 'gec_formation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 3,
-          form_code: 'PHDEE02-C',
-          form_name: 'PHD Committee Member Change Form',
-          description: 'Form to request committee member change',
-          workflow_stage: 'gec_formation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 4,
-          form_code: 'PHDEE03',
-          form_name: 'Comprehensive Examination Request Form',
-          description: 'Request form for comprehensive examination',
-          workflow_stage: 'comprehensive_exam',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 5,
-          form_code: 'PHDEE-E1',
-          form_name: 'Comprehensive Examination Evaluation Form',
-          description: 'Form to evaluate comprehensive examination',
-          workflow_stage: 'comprehensive_exam_evaluation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 6,
-          form_code: 'PHDEE04-A',
-          form_name: 'Synopsis Defense Request Form',
-          description: 'Form to request synopsis defense',
-          workflow_stage: 'synopsis_defense',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        {
-          id: 7,
-          form_code: 'PHDEE04-B',
-          form_name: 'Synopsis Defense Scheduling Form',
-          description: 'Form to schedule synopsis defense',
-          workflow_stage: 'synopsis_defense_scheduling',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 8, 
-          form_code: 'PHDEE-E2-A',
-          form_name: 'Synopsis Defense Evaluation Form',
-          description: 'Form to evaluate synopsis defense',
-          workflow_stage: 'synopsis_defense_evaluation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 9, 
-          form_code: 'PHDEE-E2-B',
-          form_name: 'Synopsis Defense Full Committee Report',
-          description: 'Full committee report for synopsis defense',
-          workflow_stage: 'synopsis_defense_full_committee_report',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 10, 
-          form_code: 'PHDEE04-C',
-          form_name: 'Research Candidacy Form',
-          description: 'Form to request research candidacy',
-          workflow_stage: 'research_candidacy',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 11, 
-          form_code: 'PHDEE-E3',
-          form_name: 'GEC Meeting Minutes For Semester Wise Progress',
-          description: 'Form to record GEC meeting minutes',
-          workflow_stage: 'gec_meeting_minutes',
-          is_active: true,
-          created_at: new Date().toISOString()
-        },
-        {
-          id: 12,
-          form_code: 'PHDEE-E4',
-          form_name: 'PHD Thesis Evaluation Form (For External Evaluators)',
-          description: 'Form to evaluate thesis for external evaluators',
-          workflow_stage: 'thesis_evaluation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 13,
-          form_code: 'PHDEE05-A',
-          form_name: 'PHD Thesis Defense Scheduling Form (In-House)',
-          description: 'Form to schedule thesis defense',
-          workflow_stage: 'thesis_defense_scheduling',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }, 
-        { 
-          id: 14,
-          form_code: 'PHDEE-E5',
-          form_name: 'In-house defense evaluation form',
-          description: 'Form to evaluate thesis defense for in-house evaluators',
-          workflow_stage: 'in_house_defense_evaluation',
-          is_active: true,
-          created_at: new Date().toISOString()
-        }
-      ]
+      success: false,
+      message: result.message || 'Failed to fetch available forms'
     };
   }
-  
-  return result;
+
+  // Return the data in the expected format
+  return {
+    success: true,
+    data: {
+      forms: result.data?.available_forms || [],
+      current_stage: result.data?.current_stage,
+      current_semester: result.data?.current_semester
+    }
+  };
 };
 
 // Get form schema
@@ -346,12 +226,29 @@ export const getSubmissionById = async (submissionId) => {
   return apiRequest(`/forms/submissions/${submissionId}`);
 };
 
+// Get form submission details for faculty/admin viewing
+export const getFormSubmissionDetails = async (submissionId, userType = 'admin') => {
+  if (userType === 'faculty') {
+    return await apiRequest(`/faculty/forms/submissions/${submissionId}`);
+  } else {
+    return await apiRequest(`/admin/forms/submissions/${submissionId}`);
+  }
+};
+
 // Approve/reject form submission
 export const approveFormSubmission = async (submissionId, action, comments = '', type = 'admin') => {
-  return apiRequest(`/forms/submissions/${submissionId}/${action}`, {
-    method: 'POST',
-    body: JSON.stringify({ comments, type })
-  });
+  // Use different routes based on the type
+  if (type === 'faculty' || type === 'supervisor') {
+    return apiRequest(`/faculty/forms/submissions/${submissionId}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ comments, type })
+    });
+  } else {
+    return apiRequest(`/forms/submissions/${submissionId}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ comments, type })
+    });
+  }
 };
 
 // Upload form attachment
@@ -477,7 +374,7 @@ export const getAllUsers = async (params = {}) => {
   return await apiRequest(endpoint);
 };
 
-// Get pending approvals
+// Get pending approvals (for admin)
 export const getPendingApprovals = async (params = {}) => {
   const queryParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -488,6 +385,11 @@ export const getPendingApprovals = async (params = {}) => {
   
   const endpoint = `/admin/approvals${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
   return await apiRequest(endpoint);
+};
+
+// Get pending approvals for faculty
+export const getFacultyPendingApprovals = async (facultyId) => {
+  return await apiRequest(`/faculty/${facultyId}/pending-approvals`);
 };
 
 // Get comprehensive exams

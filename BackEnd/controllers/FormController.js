@@ -9,7 +9,7 @@ class FormController {
             const query = `
                 SELECT 
                     id, form_code, form_name, description, workflow_stage,
-                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval,
+                    requires_supervisor_approval, requires_dec_approval, requires_gec_approval,
                     max_submissions_per_user, prerequisite_forms, document_templates
                 FROM form_types 
                 WHERE is_active = true
@@ -64,6 +64,24 @@ class FormController {
             const currentStage = user.current_stage || 'supervision_consent';
             const completedFormIds = user.completed_forms || [];
 
+            // --- Prevent multiple onboarding submissions ---
+            // Find onboarding form type id
+            const onboardingFormType = await pool.query(`
+                SELECT id FROM form_types WHERE form_code = 'ONBOARDING-001' LIMIT 1
+            `);
+            let onboardingFormTypeId = onboardingFormType.rows.length > 0 ? onboardingFormType.rows[0].id : null;
+            let hasActiveOnboarding = false;
+            if (onboardingFormTypeId) {
+                // Check if student has any onboarding submission not rejected or requires_revision
+                const onboardingSub = await pool.query(`
+                    SELECT 1 FROM form_submissions 
+                    WHERE user_id = $1 AND form_type_id = $2 
+                    AND status NOT IN ('rejected', 'requires_revision')
+                    LIMIT 1
+                `, [user_id, onboardingFormTypeId]);
+                hasActiveOnboarding = onboardingSub.rows.length > 0;
+            }
+
             // Get available forms for current stage
             const query = `
                 SELECT 
@@ -81,12 +99,18 @@ class FormController {
 
             const result = await pool.query(query, [currentStage, completedFormIds, user_id, currentStage]);
 
+            // Filter out onboarding form if already submitted and not rejected/requires_revision
+            let availableForms = result.rows;
+            if (onboardingFormTypeId && hasActiveOnboarding) {
+                availableForms = availableForms.filter(f => f.id !== onboardingFormTypeId);
+            }
+
             res.json({
                 success: true,
                 data: {
                     current_stage: currentStage,
                     current_semester: user.current_semester,
-                    available_forms: result.rows
+                    available_forms: availableForms
                 }
             });
 
@@ -109,7 +133,7 @@ class FormController {
                 SELECT 
                     form_code, form_name, description, form_schema, 
                     document_templates, prerequisite_forms,
-                    requires_supervisor_approval, requires_admin_approval, requires_gec_approval
+                    requires_supervisor_approval, requires_dec_approval, requires_gec_approval
                 FROM form_types 
                 WHERE form_code = $1 AND is_active = true
             `;
@@ -285,6 +309,22 @@ class FormController {
 
             const formType = formTypeResult.rows[0];
 
+            // Special check for onboarding form: only allow if no active submission exists
+            if (formCode === 'ONBOARDING-001') {
+                const onboardingExists = await pool.query(`
+                    SELECT 1 FROM form_submissions 
+                    WHERE user_id = $1 AND form_type_id = $2 
+                    AND status NOT IN ('rejected', 'requires_revision', 'draft')
+                    LIMIT 1
+                `, [userId, formType.id]);
+                if (onboardingExists.rows.length > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'You have already submitted the onboarding form. Please wait for it to be processed or contact admin if you need to resubmit.'
+                    });
+                }
+            }
+
             // Check prerequisites
             const prerequisites = await WorkflowService.checkFormPrerequisites(userId, formCode);
             if (!prerequisites.met) {
@@ -339,13 +379,38 @@ class FormController {
 
             // Handle special form types
             if (formCode === 'PHDEE02-A') {
-                // Supervisor consent form - create supervisor consent record
-                // Add the student's user ID to the form data
+                // Supervisor consent form - create supervisor consent record and assign supervisor
                 const formDataWithUserId = {
                     ...formData,
-                    studentUserId: userId  // Add the student's user ID
+                    studentUserId: userId,
+                    faculty_id: req.user.faculty_id || req.user.id  // Add faculty ID
                 };
                 await this.handleSupervisorConsentForm(submission.id, formDataWithUserId);
+                
+                // Handle workflow transition
+                const WorkflowService = require('../services/WorkflowService');
+                const workflowResult = await WorkflowService.handleSupervisorConsentSubmission(
+                    submission.id, 
+                    formDataWithUserId
+                );
+                
+                if (workflowResult.success) {
+                    // Clear saved progress
+                    await pool.query(
+                        'DELETE FROM form_progress WHERE user_id = $1 AND form_type_id = $2',
+                        [userId, formType.id]
+                    );
+
+                    return res.json({
+                        success: true,
+                        message: workflowResult.message,
+                        data: {
+                            submissionId: submission.id,
+                            studentAssigned: true,
+                            supervisorId: workflowResult.supervisorId
+                        }
+                    });
+                }
             }
 
             // Clear saved progress
@@ -441,7 +506,8 @@ class FormController {
 
             // Create a form submission record for the onboarding data
             const formTypeQuery = `
-                SELECT id FROM form_types WHERE form_code = 'ONBOARDING-001'
+                SELECT id, requires_dec_approval, requires_supervisor_approval, requires_hod_approval, requires_chairperson_approval 
+                FROM form_types WHERE form_code = 'ONBOARDING-001'
             `;
             const formTypeResult = await pool.query(formTypeQuery);
             
@@ -450,14 +516,15 @@ class FormController {
                 return;
             }
             
-            const formTypeId = formTypeResult.rows[0].id;
+            const formType = formTypeResult.rows[0];
             
-            // Create form submission
+            // Create form submission with proper approval status
             const insertQuery = `
                 INSERT INTO form_submissions (
                     user_id, form_type_id, form_data, workflow_stage, 
-                    semester, academic_year, status, supervisor_approval_status, hod_approval_status
-                ) VALUES ($1, $2, $3, $4, $5, $6, 'submitted', 'pending', 'pending')
+                    semester, academic_year, status,
+                    dec_approval_status, supervisor_approval_status, hod_approval_status, chairperson_approval_status
+                ) VALUES ($1, $2, $3, $4, $5, $6, 'submitted', $7, $8, $9, $10)
                 RETURNING *
             `;
 
@@ -466,23 +533,22 @@ class FormController {
 
             const result = await pool.query(insertQuery, [
                 userId, 
-                formTypeId, 
+                formType.id, 
                 JSON.stringify(data), 
                 'supervision_consent',
-                1, // First semester
-                academicYear
+                '1st', // First semester (enum value)
+                academicYear,
+                formType.requires_dec_approval ? 'pending' : 'not_required',
+                formType.requires_supervisor_approval ? 'pending' : 'not_required',
+                formType.requires_hod_approval ? 'pending' : 'not_required',
+                formType.requires_chairperson_approval ? 'pending' : 'not_required'
             ]);
 
             const submission = result.rows[0];
             console.log('Onboarding form submission created:', submission.id);
 
-            // Send notifications to supervisors and HOD
-            await this.sendApprovalNotifications(submission, { 
-                form_code: 'ONBOARDING-001', 
-                form_name: 'Initial Onboarding Form',
-                requires_supervisor_approval: true,
-                requires_admin_approval: false
-            });
+            // Send notifications to approvers
+            await this.sendApprovalNotifications(submission, formType);
 
         } catch (error) {
             console.error('Error handling initial onboarding data:', error);
@@ -683,7 +749,7 @@ class FormController {
                         ft.form_name,
                         ft.workflow_stage,
                         ft.requires_supervisor_approval,
-                        ft.requires_admin_approval,
+                        ft.requires_dec_approval,
                         ft.requires_gec_approval,
                         u.first_name || ' ' || u.last_name as student_name,
                         u.email as student_email,
@@ -738,7 +804,7 @@ class FormController {
                         ft.form_name,
                         ft.workflow_stage,
                         ft.requires_supervisor_approval,
-                        ft.requires_admin_approval,
+                        ft.requires_dec_approval,
                         ft.requires_gec_approval
                     FROM form_submissions fs
                     JOIN form_types ft ON fs.form_type_id = ft.id
@@ -809,7 +875,7 @@ class FormController {
                     ft.description,
                     ft.workflow_stage,
                     ft.requires_supervisor_approval,
-                    ft.requires_admin_approval,
+                    ft.requires_dec_approval,
                     ft.requires_gec_approval,
                     u.first_name || ' ' || u.last_name as student_name,
                     u.email as student_email,

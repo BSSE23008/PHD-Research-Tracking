@@ -69,8 +69,8 @@ function App() {
     // - Student is in first semester and hasn't completed initial setup
     // - Student profile is incomplete
     return userData.role === 'student' && 
-           (!userData.primary_supervisor_id || 
-            userData.current_semester === '1st' && !userData.onboarding_completed);
+           !userData.primary_supervisor_id && 
+           userData.current_semester === '1st';
   };
 
   const handleLogin = (userData) => {

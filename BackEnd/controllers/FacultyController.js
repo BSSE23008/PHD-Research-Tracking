@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const WorkflowService = require('../services/WorkflowService');
 
 class FacultyController {
     // Get all faculty members with their roles
@@ -361,6 +362,36 @@ class FacultyController {
         try {
             const { faculty_id } = req.params;
 
+            // First, determine if the ID is a user ID or faculty ID
+            let actualFacultyId = faculty_id;
+            
+            // Check if it's a user ID (faculty user in users table)
+            const userCheckQuery = `
+                SELECT f.id as faculty_id 
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `;
+            
+            const userCheckResult = await pool.query(userCheckQuery, [faculty_id]);
+            if (userCheckResult.rows.length > 0) {
+                actualFacultyId = userCheckResult.rows[0].faculty_id;
+                console.log(`Converted user ID ${faculty_id} to faculty ID ${actualFacultyId}`);
+            } else {
+                // Check if it's already a faculty ID
+                const facultyCheckQuery = `
+                    SELECT id FROM faculty WHERE id = $1 AND is_active = true
+                `;
+                const facultyCheckResult = await pool.query(facultyCheckQuery, [faculty_id]);
+                if (facultyCheckResult.rows.length === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Faculty not found'
+                    });
+                }
+                actualFacultyId = faculty_id;
+            }
+
             const query = `
                 SELECT 
                     fs.id,
@@ -410,10 +441,11 @@ class FacultyController {
                         SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'chairperson' AND fr.is_active = true
                     ))
                 )
+                AND fs.status = 'submitted'
                 ORDER BY fs.submitted_at DESC
             `;
 
-            const result = await pool.query(query, [faculty_id]);
+            const result = await pool.query(query, [actualFacultyId]);
 
             res.json({
                 success: true,
@@ -433,8 +465,84 @@ class FacultyController {
     // Approve/Reject form submission
     static async approveForm(req, res) {
         try {
-            const { form_submission_id, approval_stage, status, comments } = req.body;
-            const faculty_id = req.user.faculty_id || req.user.id; // Assuming faculty user
+            // Handle both route formats
+            let form_submission_id, approval_stage, status, comments;
+            
+            if (req.params.submissionId && req.params.action) {
+                // New route format: /forms/submissions/:submissionId/:action
+                form_submission_id = req.params.submissionId;
+                // Convert action to proper enum value
+                status = req.params.action === 'approve' ? 'approved' : 
+                        req.params.action === 'reject' ? 'rejected' : req.params.action;
+                comments = req.body.comments || '';
+                
+                // Determine approval stage based on the form submission
+                const submissionQuery = `
+                    SELECT ft.form_code, fs.supervisor_approval_status, fs.hod_approval_status, fs.chairperson_approval_status
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    WHERE fs.id = $1
+                `;
+                const submissionResult = await pool.query(submissionQuery, [form_submission_id]);
+                
+                if (submissionResult.rows.length === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Form submission not found'
+                    });
+                }
+                
+                const submission = submissionResult.rows[0];
+                
+                // Determine which stage needs approval
+                if (submission.supervisor_approval_status === 'pending') {
+                    approval_stage = 'supervisor';
+                } else if (submission.hod_approval_status === 'pending') {
+                    approval_stage = 'hod';
+                } else if (submission.chairperson_approval_status === 'pending') {
+                    approval_stage = 'chairperson';
+                } else {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'No pending approval stage found for this submission'
+                    });
+                }
+            } else {
+                // Original route format
+                form_submission_id = req.body.form_submission_id;
+                approval_stage = req.body.approval_stage;
+                status = req.body.status;
+                comments = req.body.comments;
+            }
+            
+            // Convert user ID to faculty ID if needed
+            let actualFacultyId = req.user.faculty_id || req.user.id;
+            
+            // Check if it's a user ID (faculty user in users table)
+            const userCheckQuery = `
+                SELECT f.id as faculty_id 
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `;
+            
+            const userCheckResult = await pool.query(userCheckQuery, [actualFacultyId]);
+            if (userCheckResult.rows.length > 0) {
+                actualFacultyId = userCheckResult.rows[0].faculty_id;
+                console.log(`Converted user ID ${req.user.id} to faculty ID ${actualFacultyId} for approval`);
+            } else {
+                // Check if it's already a faculty ID
+                const facultyCheckQuery = `
+                    SELECT id FROM faculty WHERE id = $1 AND is_active = true
+                `;
+                const facultyCheckResult = await pool.query(facultyCheckQuery, [actualFacultyId]);
+                if (facultyCheckResult.rows.length === 0) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Faculty not found'
+                    });
+                }
+            }
 
             if (!form_submission_id || !approval_stage || !status) {
                 return res.status(400).json({
@@ -460,7 +568,7 @@ class FacultyController {
                 )
             `;
 
-            const permissionResult = await pool.query(permissionQuery, [form_submission_id, faculty_id, approval_stage]);
+            const permissionResult = await pool.query(permissionQuery, [form_submission_id, actualFacultyId, approval_stage]);
 
             if (permissionResult.rows.length === 0) {
                 return res.status(403).json({
@@ -472,14 +580,78 @@ class FacultyController {
             // Update approval status
             const updateResult = await pool.query(
                 'SELECT update_form_approval_status($1, $2, $3, $4, $5)',
-                [form_submission_id, approval_stage, status, faculty_id, comments]
+                [form_submission_id, approval_stage, status, actualFacultyId, comments]
             );
 
             if (updateResult.rows[0].update_form_approval_status) {
-                res.json({
-                    success: true,
-                    message: `Form ${status} successfully`
-                });
+                // Special handling for onboarding forms - auto-finalize after supervisor approval
+                if (approval_stage === 'supervisor' && status === 'approved') {
+                    const checkOnboardingQuery = `
+                        SELECT ft.form_code, fs.supervisor_approval_status, fs.hod_approval_status, fs.chairperson_approval_status
+                        FROM form_submissions fs
+                        JOIN form_types ft ON fs.form_type_id = ft.id
+                        WHERE fs.id = $1
+                    `;
+                    
+                    const onboardingResult = await pool.query(checkOnboardingQuery, [form_submission_id]);
+                    
+                    if (onboardingResult.rows.length > 0) {
+                        const submission = onboardingResult.rows[0];
+                        
+                        // If this is an onboarding form and all required approvals are complete, finalize it
+                        if (submission.form_code === 'ONBOARDING-001' && 
+                            submission.supervisor_approval_status === 'approved' &&
+                            submission.hod_approval_status === 'not_required' &&
+                            submission.chairperson_approval_status === 'not_required') {
+                            
+                            await pool.query(`
+                                UPDATE form_submissions 
+                                SET 
+                                    status = 'approved',
+                                    final_approval_status = 'approved',
+                                    final_approved_at = CURRENT_TIMESTAMP,
+                                    last_updated_at = CURRENT_TIMESTAMP
+                                WHERE id = $1
+                            `, [form_submission_id]);
+                            
+                            console.log(`Onboarding form ${form_submission_id} auto-finalized after supervisor approval`);
+                        }
+                    }
+                }
+
+                            // Handle special workflow cases
+            if (approval_stage === 'supervisor' && status === 'approved') {
+                // Check if this is an onboarding form
+                const formTypeQuery = `
+                    SELECT ft.form_code
+                    FROM form_submissions fs
+                    JOIN form_types ft ON fs.form_type_id = ft.id
+                    WHERE fs.id = $1
+                `;
+                const formTypeResult = await pool.query(formTypeQuery, [form_submission_id]);
+                
+                if (formTypeResult.rows.length > 0 && formTypeResult.rows[0].form_code === 'ONBOARDING-001') {
+                    // Handle onboarding approval workflow
+                    const workflowResult = await WorkflowService.handleOnboardingApproval(
+                        form_submission_id, 
+                        actualFacultyId, 
+                        status
+                    );
+                    
+                    if (workflowResult.success && workflowResult.requiresConsentForm) {
+                        return res.json({
+                            success: true,
+                            message: workflowResult.message,
+                            requiresConsentForm: true
+                        });
+                    }
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `Form ${status} successfully`
+            });
             } else {
                 res.status(500).json({
                     success: false,
@@ -494,6 +666,176 @@ class FacultyController {
                 message: 'Error processing approval',
                 error: error.message
             });
+        }
+    }
+
+    // Get form submission details for viewing
+    static async getFormSubmissionDetails(req, res) {
+        try {
+            const { submissionId } = req.params;
+            const facultyId = req.user.faculty_id || req.user.id;
+
+            // Convert user ID to faculty ID if needed
+            let actualFacultyId = facultyId;
+            const userCheckQuery = `
+                SELECT f.id as faculty_id 
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `;
+            
+            const userCheckResult = await pool.query(userCheckQuery, [facultyId]);
+            if (userCheckResult.rows.length > 0) {
+                actualFacultyId = userCheckResult.rows[0].faculty_id;
+            }
+
+            // Get detailed submission information
+            const query = `
+                SELECT 
+                    fs.*,
+                    ft.form_code,
+                    ft.form_name,
+                    ft.description,
+                    ft.workflow_stage,
+                    ft.form_schema,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id,
+                    u.current_semester,
+                    u.academic_year,
+                    d.dept_name as department,
+                    d.dept_code as department_code,
+                    f1.first_name || ' ' || f1.last_name as primary_supervisor_name,
+                    f1.email as primary_supervisor_email,
+                    f2.first_name || ' ' || f2.last_name as co_supervisor_name,
+                    f2.email as co_supervisor_email
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN faculty f1 ON u.primary_supervisor_id = f1.id
+                LEFT JOIN faculty f2 ON u.co_supervisor_id = f2.id
+                WHERE fs.id = $1
+            `;
+
+            const result = await pool.query(query, [submissionId]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Submission not found'
+                });
+            }
+
+            const submission = result.rows[0];
+
+            // Check if faculty has permission to view this submission
+            const hasPermission = await this.checkFacultyPermission(actualFacultyId, submission);
+            
+            if (!hasPermission) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'You do not have permission to view this submission'
+                });
+            }
+
+            // Get attachments
+            const attachmentsQuery = `
+                SELECT id, file_name, file_type, upload_type, uploaded_at, is_verified, verification_comments
+                FROM form_attachments 
+                WHERE form_submission_id = $1
+                ORDER BY uploaded_at DESC
+            `;
+
+            const attachments = await pool.query(attachmentsQuery, [submissionId]);
+
+            // Get approval history
+            const historyQuery = `
+                SELECT 
+                    fah.approval_stage,
+                    fah.previous_status,
+                    fah.new_status,
+                    fah.comments,
+                    fah.action_date,
+                    f.first_name || ' ' || f.last_name as approved_by_name,
+                    f.email as approved_by_email
+                FROM form_approval_history fah
+                LEFT JOIN faculty f ON fah.approved_by = f.id
+                WHERE fah.form_submission_id = $1
+                ORDER BY fah.action_date DESC
+            `;
+
+            const history = await pool.query(historyQuery, [submissionId]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...submission,
+                    attachments: attachments.rows,
+                    approval_history: history.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching form submission details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch submission details',
+                error: error.message
+            });
+        }
+    }
+
+    // Helper method to check faculty permission
+    static async checkFacultyPermission(facultyId, submission) {
+        try {
+            // Check if faculty is supervisor of the student
+            const supervisorCheck = await pool.query(`
+                SELECT 1 FROM users 
+                WHERE id = $1 AND (primary_supervisor_id = $2 OR co_supervisor_id = $2)
+            `, [submission.user_id, facultyId]);
+
+            if (supervisorCheck.rows.length > 0) {
+                return true;
+            }
+
+            // Check if faculty has HOD role for the student's department
+            const hodCheck = await pool.query(`
+                SELECT 1 FROM faculty_roles fr
+                JOIN users u ON u.department_id = fr.department_id
+                WHERE fr.faculty_id = $1 AND fr.role = 'hod' AND fr.is_active = true
+                AND u.id = $2
+            `, [facultyId, submission.user_id]);
+
+            if (hodCheck.rows.length > 0) {
+                return true;
+            }
+
+            // Check if faculty is chairperson
+            const chairpersonCheck = await pool.query(`
+                SELECT 1 FROM faculty_roles 
+                WHERE faculty_id = $1 AND role = 'chairperson' AND is_active = true
+            `, [facultyId]);
+
+            if (chairpersonCheck.rows.length > 0) {
+                return true;
+            }
+
+            // Check if faculty is GEC member for this student
+            const gecCheck = await pool.query(`
+                SELECT 1 FROM gec_committee_members gcm
+                JOIN gec_committees gc ON gcm.committee_id = gc.id
+                WHERE gcm.faculty_id = $1 AND gc.student_user_id = $2 AND gcm.is_active = true
+            `, [facultyId, submission.user_id]);
+
+            if (gecCheck.rows.length > 0) {
+                return true;
+            }
+
+            return false;
+        } catch (error) {
+            console.error('Error checking faculty permission:', error);
+            return false;
         }
     }
 
