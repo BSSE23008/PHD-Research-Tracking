@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import Login from './components/Login'
 import Signup from './components/Signup'
-import Dashboard from './components/Dashboard'
+import Dashboard from './components/Dashboard.jsx'
 import SupervisorDashboard from './components/SupervisorDashboard'
 import AdminDashboard from './components/AdminDashboard'
 import FormManager from './components/FormManager'
@@ -20,80 +20,75 @@ function App() {
   // Check for existing authentication on app load
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token')
-      
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+
       if (token) {
         try {
+          // ...on app load, verify token and fetch user profile
+          // setUser(result.data.user)
           const result = await verifyToken()
           if (result.success) {
             setUser(result.data.user)
             setCurrentPage('dashboard')
           } else {
-            // Token is invalid, remove it
-            localStorage.removeItem('token')
-            sessionStorage.removeItem('token')
+            localStorage.removeItem('token');
+            sessionStorage.removeItem('token');
+            // Change 2: If token is invalid, go to login.
+            setCurrentPage('login');
           }
         } catch (error) {
-          console.error('Auth check failed:', error)
-          localStorage.removeItem('token')
-          sessionStorage.removeItem('token')
+          console.error('Auth check failed:', error);
+          localStorage.removeItem('token');
+          sessionStorage.removeItem('token');
+          setCurrentPage('login');
         }
+      } else {
+        // Change 3: If no token exists, default to login page.
+        setCurrentPage('login');
       }
-      setLoading(false)
-    }
+      setLoading(false);
+    };
 
-    checkAuth()
-  }, [])
+    checkAuth();
+  }, []);
 
-  // Handle login
+  // Handle login (No changes needed here)
   const handleLogin = async (formData) => {
     try {
       const response = await fetch('http://localhost:5000/api/auth/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        })
-      })
-
-      const data = await response.json()
-
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email, password: formData.password })
+      });
+      const data = await response.json();
       if (response.ok) {
-        // Store token
         if (formData.rememberMe) {
           localStorage.setItem('token', data.data.token)
         } else {
           sessionStorage.setItem('token', data.data.token)
         }
-        
         setUser(data.data.user)
+        // console.log("data.data.user", data.data.user);
         setCurrentPage('dashboard')
         return { success: true }
       } else {
-        return { success: false, message: data.message }
+        return { success: false, message: data.message };
       }
     } catch (error) {
-      console.error('Login error:', error)
-      return { success: false, message: 'Network error. Please check if the backend is running.' }
+      console.error('Login error:', error);
+      return { success: false, message: 'Network error. Please check if the backend is running.' };
     }
-  }
+  };
 
-  // Handle signup
+  // Handle signup (No changes needed here)
   const handleSignup = async (formData) => {
     try {
       const response = await fetch('http://localhost:5000/api/auth/signup', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
-      })
-
-      const data = await response.json()
-
+      });
+      const data = await response.json();
       if (response.ok) {
         // Store token
         localStorage.setItem('token', data.data.token)
@@ -104,8 +99,8 @@ function App() {
         return { success: false, message: data.message }
       }
     } catch (error) {
-      console.error('Signup error:', error)
-      return { success: false, message: 'Network error. Please check if the backend is running.' }
+      console.error('Signup error:', error);
+      return { success: false, message: 'Network error. Please check if the backend is running.' };
     }
   }
 
@@ -172,14 +167,14 @@ function App() {
   const renderContent = () => {
     if (!user) {
       return currentPage === 'signup' ? (
-        <Signup 
-          onSignup={handleSignup} 
-          onSwitchToLogin={() => setCurrentPage('login')} 
+        <Signup
+          onSignup={handleSignup}
+          onSwitchToLogin={() => setCurrentPage('login')}
         />
       ) : (
-        <Login 
-          onLogin={handleLogin} 
-          onSwitchToSignup={() => setCurrentPage('signup')} 
+        <Login
+          onLogin={handleLogin}
+          onSwitchToSignup={() => setCurrentPage('signup')}
         />
       )
     }
@@ -215,11 +210,13 @@ function App() {
     )
   }
 
+  // Add debug output before return
+  console.log('user:', user, 'currentPage:', currentPage);
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar 
-        user={user} 
-        onLogout={handleLogout} 
+      <Navbar
+        user={user}
+        onLogout={handleLogout}
         navigationItems={getNavigationItems()}
         activeView={currentPage}
         onNavigate={setCurrentPage}
@@ -231,8 +228,13 @@ function App() {
           {renderContent()}
         </div>
       </main>
+      {/* {user && (
+        <div className="debug-user-info" style={{ position: 'fixed', bottom: 10, right: 10, background: 'white', padding: '10px', border: '1px solid #ccc', zIndex: 1000 }}>
+          <pre>{JSON.stringify(user, null, 2)}</pre>
+        </div>
+      )} */}
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

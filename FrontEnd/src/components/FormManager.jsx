@@ -12,8 +12,28 @@ import {
   getStatusColor,
   getWorkflowStageDisplayName
 } from '../utils/api';
-import { PHDEE02AForm } from './forms/PHDEE02-A';
-import PHDEE03 from './forms/PHDEE03';
+import PHDEE02A from './Forms/PHDEE02-A';
+import PHDEE02B from './Forms/PHDEE02-B';
+import PHDEE02C from './Forms/PHDEE02-C';
+import PHDEE03 from './Forms/PHDEE03';
+import PHDEE_E1 from './Forms/PHDEE-E1';  
+import PHDEE04A from './Forms/PHDEE04-A';
+import PHDEE04B from './Forms/PHDEE04-B';
+import PHDEE_E2_A from './Forms/PHDEE-E2-A';
+import PHDEE_E2_B from './Forms/PHDEE-E2-B';
+import PHDEE04C from './Forms/PHDEE04-C';
+import PHDEE_E3 from './Forms/PHDEE-E3';
+import PHDEE_E4 from './Forms/PHDEE-E4';
+import PHDEE05A from './Forms/PHDEE05-A';
+import PHDEE_E5 from './Forms/PHDEE-E5';
+import PHDEE05_B from './Forms/PHDEE05-B';
+import PHDEE_E6 from './Forms/PHDEE-E6';
+import PHDEE_E2_C from './Forms/PHDEE-E2-C';
+import PHDEE_E3_A from './Forms/PHDEE-E3-A'; 
+import PHDEE_E3_B from './Forms/PHDEE-E3-B';
+import PHDEE_E4_A from './Forms/PHDEE-E4-A';
+
+
 
 const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
   const [currentView, setCurrentView] = useState('list'); // 'list', 'form', 'submission'
@@ -82,7 +102,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
       const result = await getFormSchema(formCode);
       if (result.success) {
         setFormSchema(result.data.formType);
-        
+
         // Load existing progress if available
         const progressResult = await loadFormProgress(formCode);
         if (progressResult.success && progressResult.data.formData) {
@@ -150,7 +170,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
     setCurrentView('form');
     setCurrentStep(0);
     setFormData({});
-    
+
     // Check if this is a custom form component
     if (isCustomFormComponent(form.form_code)) {
       // Custom forms handle their own state and API calls
@@ -160,11 +180,33 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
     loadFormSchema(form.form_code);
   };
 
+  // ********************** Custom Form Components **********************
   const isCustomFormComponent = (formCode) => {
-    const customForms = ['PHDEE02-A', 'PHDEE02-C'];
+    const customForms = [ 'PHDEE02-A',
+                          'PHDEE02-B',
+                          'PHDEE02-C',
+                          'PHDEE03',
+                          'PHDEE-E1',
+                          'PHDEE04-A',
+                          'PHDEE04-B', 
+                          'PHDEE-E2-A',
+                          'PHDEE-E2-B', 
+                          'PHDEE04-C',
+                          'PHDEE-E3',
+                          'PHDEE-E4', 
+                          'PHDEE05-A',
+                          'PHDEE-E5',
+                          'PHDEE05-B',
+                          'PHDEE-E6',
+                          'PHDEE-E2-C',
+                          'PHDEE-E3-A',
+                          'PHDEE-E3-B',
+                          'PHDEE-E4-A' ];
+
     return customForms.includes(formCode);
   };
 
+  // ********************** Custom Form Renderer **********************
   const renderCustomForm = (formCode) => {
     const commonProps = {
       user: user,
@@ -178,12 +220,48 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
         loadInitialData(); // Refresh the form list
       }
     };
-
+  
     switch (formCode) {
       case 'PHDEE02-A':
-        return <PHDEE02AForm {...commonProps} />;
+        return <PHDEE02A {...commonProps} />;
+      case 'PHDEE02-B':
+        return <PHDEE02B {...commonProps}/>;
       case 'PHDEE02-C':
+        return <PHDEE02C {...commonProps} />;
+      case 'PHDEE03':
         return <PHDEE03 {...commonProps} />;
+      case 'PHDEE-E1':
+        return <PHDEE_E1 {...commonProps} />;
+      case 'PHDEE04-A':
+        return <PHDEE04A {...commonProps} />;
+      case 'PHDEE04-B':
+        return <PHDEE04B {...commonProps} />;
+      case 'PHDEE-E2-A':
+        return <PHDEE_E2_A {...commonProps} />;
+      case 'PHDEE-E2-B':
+        return <PHDEE_E2_B {...commonProps} />;
+      case 'PHDEE04-C':
+        return <PHDEE04C {...commonProps} />;
+      case 'PHDEE-E3':
+        return <PHDEE_E3 {...commonProps} />;
+      case 'PHDEE-E4':
+        return <PHDEE_E4 {...commonProps} />;
+      case 'PHDEE05-A':
+        return <PHDEE05A {...commonProps} />;
+      case 'PHDEE-E5':
+        return <PHDEE_E5 {...commonProps} />;
+      case 'PHDEE05-B':
+        return <PHDEE05_B {...commonProps} />;
+      case 'PHDEE-E6':
+        return <PHDEE_E6 {...commonProps} />;
+      case 'PHDEE-E2-C':
+        return <PHDEE_E2_C {...commonProps} />;
+      case 'PHDEE-E3-A': 
+        return <PHDEE_E3_A {...commonProps} />; 
+      case 'PHDEE-E3-B': 
+        return <PHDEE_E3_B {...commonProps} />;
+      case 'PHDEE-E4-A': 
+        return <PHDEE_E4_A {...commonProps} />;
       default:
         return null;
     }
@@ -200,7 +278,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
 
     const renderField = (field, index) => {
       const value = data[field.name] || '';
-      
+
       const handleFieldChange = (newValue) => {
         onChange({
           ...data,
@@ -394,10 +472,10 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Form Management</h2>
+          <h2 className="text-4xl text-gray-900">Form Management</h2>
           <p className="text-gray-600 mt-1">Manage your PhD forms and submissions</p>
         </div>
-        
+
         {currentView !== 'list' && (
           <button
             onClick={() => {
@@ -418,21 +496,19 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
           <nav className="flex space-x-8 px-6">
             <button
               onClick={() => setCurrentView('list')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                currentView === 'list'
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${currentView === 'list'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
             >
               Available Forms
             </button>
             <button
               onClick={() => setCurrentView('submissions')}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                currentView === 'submissions'
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${currentView === 'submissions'
                   ? 'border-primary-500 text-primary-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
+                }`}
             >
               My Submissions
             </button>
@@ -441,6 +517,12 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
 
         {/* Content */}
         <div className="p-6">
+          {/* 
+            Available Forms - list of forms that can be started (PHDEE02-A, PHDEE02-B, PHDEE02-C)
+            My Submissions - list of forms that have been submitted
+            Form - the form currently being filled out
+            Submission - the submission currently being viewed
+          */}
           {currentView === 'list' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {availableForms.map((form) => (
@@ -456,11 +538,11 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
                       {getWorkflowStageDisplayName(form.workflow_stage)}
                     </span>
                   </div>
-                  
+
                   <p className="text-gray-600 mb-4 line-clamp-3">
                     {form.description}
                   </p>
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-500">
                       Code: {form.form_code}
@@ -497,7 +579,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
                         {submission.status}
                       </span>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                       <div>
                         <span className="text-gray-500">Submitted:</span>
@@ -512,7 +594,7 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
                         <div className="font-medium">{submission.supervisor_approval_status}</div>
                       </div>
                     </div>
-                    
+
                     <div className="flex justify-end mt-4">
                       <button
                         onClick={() => handleViewSubmission(submission.id)}
@@ -545,18 +627,16 @@ const FormManager = ({ user, selectedFormCode, onFormCodeCleared }) => {
                       <span className="text-sm text-gray-600">Auto-save</span>
                       <button
                         onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          autoSaveEnabled ? 'bg-primary-600' : 'bg-gray-200'
-                        }`}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${autoSaveEnabled ? 'bg-primary-600' : 'bg-gray-200'
+                          }`}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            autoSaveEnabled ? 'translate-x-6' : 'translate-x-1'
-                          }`}
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${autoSaveEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
                         />
                       </button>
                     </div>
-                    
+
                     <DynamicFormRenderer
                       schema={formSchema}
                       data={formData}

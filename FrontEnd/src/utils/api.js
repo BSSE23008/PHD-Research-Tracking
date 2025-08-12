@@ -120,7 +120,7 @@ export const getAvailableForms = async () => {
         },
         {
           id: 2,
-          form_code: 'PHDEE02-C',
+          form_code: 'PHDEE02-B',
           form_name: 'GEC Formation Form',
           description: 'Form for Graduate Examination Committee formation',
           workflow_stage: 'gec_formation',
@@ -129,6 +129,15 @@ export const getAvailableForms = async () => {
         },
         {
           id: 3,
+          form_code: 'PHDEE02-C',
+          form_name: 'PHD Committee Member Change Form',
+          description: 'Form to request committee member change',
+          workflow_stage: 'gec_formation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 4,
           form_code: 'PHDEE03',
           form_name: 'Comprehensive Examination Request Form',
           description: 'Form to request comprehensive examination',
@@ -137,20 +146,146 @@ export const getAvailableForms = async () => {
           created_at: new Date().toISOString()
         },
         {
-          id: 4,
+          id: 5,
+          form_code: 'PHDEE-E1',
+          form_name: 'Comprehensive Examination Evaluation Form',
+          description: 'Form to evaluate comprehensive examination',
+          workflow_stage: 'comprehensive_exam_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 6,
           form_code: 'PHDEE04-A',
           form_name: 'Synopsis Defense Request Form',
           description: 'Form to request synopsis defense',
           workflow_stage: 'synopsis_defense',
           is_active: true,
           created_at: new Date().toISOString()
+        }, 
+        {
+          id: 7,
+          form_code: 'PHDEE04-B',
+          form_name: 'Synopsis Defense Scheduling Form',
+          description: 'Form to schedule synopsis defense',
+          workflow_stage: 'synopsis_defense_scheduling',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 8, 
+          form_code: 'PHDEE-E2-A',
+          form_name: 'Synopsis Defense Evaluation Form',
+          description: 'Form to evaluate synopsis defense',
+          workflow_stage: 'synopsis_defense_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 9, 
+          form_code: 'PHDEE-E2-B',
+          form_name: 'Synopsis Defense Full Committee Report',
+          description: 'Full committee report for synopsis defense',
+          workflow_stage: 'synopsis_defense_full_committee_report',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 10, 
+          form_code: 'PHDEE04-C',
+          form_name: 'Research Candidacy Form',
+          description: 'Form to request research candidacy',
+          workflow_stage: 'research_candidacy',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 11, 
+          form_code: 'PHDEE-E3',
+          form_name: 'GEC Meeting Minutes For Semester Wise Progress',
+          description: 'Form to record GEC meeting minutes',
+          workflow_stage: 'gec_meeting_minutes',
+          is_active: true,
+          created_at: new Date().toISOString()
         },
         {
-          id: 5,
+          id: 12,
+          form_code: 'PHDEE-E4',
+          form_name: 'PHD Thesis Evaluation Form (For External Evaluators)',
+          description: 'Form to evaluate thesis for external evaluators',
+          workflow_stage: 'thesis_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 13,
           form_code: 'PHDEE05-A',
-          form_name: 'Thesis Defense Request Form',
-          description: 'Form to request thesis defense',
-          workflow_stage: 'thesis_defense',
+          form_name: 'PHD Thesis Defense Scheduling Form (In-House)',
+          description: 'Form to schedule thesis defense',
+          workflow_stage: 'thesis_defense_scheduling',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 14,
+          form_code: 'PHDEE-E5',
+          form_name: 'In-house defense evaluation form',
+          description: 'Form to evaluate thesis defense for in-house evaluators',
+          workflow_stage: 'in_house_defense_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 15,
+          form_code: 'PHDEE05-B',
+          form_name: 'PHD Thesis Defense Scheduling Form (Public)',
+          description: 'Form to schedule thesis defense for public',
+          workflow_stage: 'thesis_defense_scheduling_public',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        {  
+          id: 16,
+          form_code: 'PHDEE-E6',
+          form_name: 'PHD Thesis Defense Evaluation Form (Public)',
+          description: 'Form to evaluate thesis defense for public',
+          workflow_stage: 'thesis_defense_evaluation_public',
+          is_active: true,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 17, 
+          form_code: 'PHDEE-E2-C',
+          form_name: 'PHD Thesis Plagiarism Check Form',
+          description: 'Form to check plagiarism in thesis',
+          workflow_stage: 'thesis_plagiarism_check',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 18, 
+          form_code: 'PHDEE-E3-A', 
+          form_name: 'PHD Thesis Evaluation Form (For External Evaluators)',
+          description: 'Form to evaluate thesis for external evaluators',
+          workflow_stage: 'thesis_evaluation',
+          is_active: true,
+          created_at: new Date().toISOString()
+        }, 
+        { 
+          id: 19,
+          form_code: 'PHDEE-E3-B',
+          form_name: 'PHD Thesis External Evaluation Request Form',
+          description: 'Form to request external evaluation of thesis',
+          workflow_stage: 'thesis_external_evaluation_request',
+          is_active: true, 
+          created_at: new Date().toISOString()
+        },
+        {
+          id: 20,
+          form_code: 'PHDEE-E4-A',
+          form_name: 'PHD Thesis Submission Form (For DPRC)',
+          description: 'Form to submit thesis for DPRC',
+          workflow_stage: 'thesis_submission',
           is_active: true,
           created_at: new Date().toISOString()
         }

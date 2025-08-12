@@ -1,6 +1,10 @@
+// PHDEE02-B.jsx
+// This file is for the GEC Formation Form (PHDEE02-B)
+
 import React, { useState, useEffect } from 'react';
 import { fetchExtendedUserProfile, getAutoFillData, saveFormProgress, loadFormProgress, submitForm } from '../../utils/api';
-import './PHDEE03.css';
+import './PHDEE02-B.css';
+import './logo.css';
 
 const FORM_STEPS = [
   { id: 0, title: 'Student Information', description: 'Basic student and degree information' },
@@ -92,7 +96,7 @@ const CommitteeMember = ({ member, onChange, memberIndex, errors, autoFilledFiel
   </div>
 );
 
-const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
+export const PHDEE02B = ({ onClose, onSubmissionComplete, autoFillData }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -174,7 +178,7 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
       
       try {
         // Try to load saved progress first
-        const progressResult = await loadFormProgress('PHDEE02-C');
+        const progressResult = await loadFormProgress('PHDEE02-B');
         if (progressResult.success && progressResult.data) {
           setFormData(prevData => ({ ...prevData, ...progressResult.data.formData }));
           setCurrentStep(progressResult.data.stepNumber || 0);
@@ -228,12 +232,23 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
     initializeForm();
   }, []);
 
+  useEffect(() => {
+    if (autoFillData) {
+      setFormData(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          Object.entries(autoFillData).filter(([key, value]) => value && (!prev[key] || prev[key] === ''))
+        )
+      }));
+    }
+  }, [autoFillData]);
+
   // Save progress automatically when form data changes
   useEffect(() => {
     if (!loading) {
       const saveProgress = async () => {
         try {
-          await saveFormProgress('PHDEE02-C', formData, currentStep, FORM_STEPS.length);
+          await saveFormProgress('PHDEE02-B', formData, currentStep, FORM_STEPS.length);
         } catch (error) {
           console.error('Error saving form progress:', error);
         }
@@ -334,7 +349,7 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
       const currentYear = new Date().getFullYear();
       const semester = Math.ceil((new Date().getMonth() + 1) / 6); // 1 for Jan-Jun, 2 for Jul-Dec
       
-      const result = await submitForm('PHDEE02-C', formData, semester, `${currentYear}-${currentYear + 1}`);
+      const result = await submitForm('PHDEE02-B', formData, semester, `${currentYear}-${currentYear + 1}`);
       
       if (result.success) {
         setShowSuccess(true);
@@ -624,7 +639,7 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
     <div className="form-overlay">
       <div className="form-modal">
         <div className="form-modal-header">
-          <h2>GEC Formation Form (PHDEE02-C)</h2>
+          <h2>GEC Formation Form (PHDEE02-B)</h2>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
         
@@ -654,14 +669,12 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
         <div className="page-background">
           <div className="form-container">
             <header className="form-header">
-              <div className="logo-container">
-                <div className="logo-placeholder"></div>
-              </div>
+              <div className="logo-placeholder"></div>
               <div className="header-text">
                 <h1>INFORMATION TECHNOLOGY UNIVERSITY OF THE PUNJAB</h1>
                 <h2>PHD GRADUATE EXAMINATION COMMITTEE - FORMATION FORM</h2>
               </div>
-              <div className="form-code">PhDEE02-C Form</div>
+              <div className="form-code">PHDEE02-B Form</div>
             </header>
 
             {renderStepContent()}
@@ -707,4 +720,4 @@ const PHDEE03 = ({ onClose, onSubmissionComplete }) => {
   );
 };
 
-export default PHDEE03; 
+export default PHDEE02B; 
