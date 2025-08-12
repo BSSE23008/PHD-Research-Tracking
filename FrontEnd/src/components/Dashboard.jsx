@@ -327,15 +327,18 @@ const Dashboard = ({ user = { first_name: 'John', last_name: 'Doe' }, onNavigate
     );
   };
 
-  const FormItem = ({ form, phaseColor }) => {
+  const FormItem = ({ form, phaseColor, onFormSelect }) => {
     const isUnlocked = form.status !== 'locked';
     
     return (
-      <div className={`p-4 rounded-lg border transition-all duration-200 ${
-        isUnlocked 
-          ? 'bg-white hover:shadow-md cursor-pointer' 
-          : 'bg-gray-50 opacity-75'
-      }`}>
+      <div
+        className={`p-4 rounded-lg border transition-all duration-200 ${
+          isUnlocked 
+            ? 'bg-white hover:shadow-md cursor-pointer' 
+            : 'bg-gray-50 opacity-75'
+        }`}
+        onClick={isUnlocked ? () => onFormSelect?.(form.code) : undefined}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3 flex-1">
             <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
@@ -374,14 +377,7 @@ const Dashboard = ({ user = { first_name: 'John', last_name: 'Doe' }, onNavigate
               {form.status}
             </span>
             
-            {isUnlocked && (
-              <button
-                onClick={() => onFormSelect?.(form.code)}
-                className={`p-2 rounded-lg hover:bg-${phaseColor}-50 text-${phaseColor}-600`}
-              >
-                {form.status === 'completed' ? <FiEye className="w-4 h-4" /> : <FiEdit className="w-4 h-4" />}
-              </button>
-            )}
+            {/* Remove the button, as the whole item is now clickable */}
           </div>
         </div>
       </div>
@@ -534,6 +530,7 @@ const Dashboard = ({ user = { first_name: 'John', last_name: 'Doe' }, onNavigate
                 key={form.code}
                 form={form}
                 phaseColor={selectedPhaseData.color}
+                onFormSelect={onFormSelect}
               />
             ))}
           </div>
