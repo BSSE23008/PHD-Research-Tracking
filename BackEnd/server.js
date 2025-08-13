@@ -38,6 +38,7 @@ const formsRoutes = require('./routes/forms');
 const adminRoutes = require('./routes/admin');
 const facultyRoutes = require('./routes/faculty');
 const gecRoutes = require('./routes/gec');
+const workflowRoutes = require('./routes/workflow');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -45,6 +46,7 @@ app.use('/api/forms', formsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/faculty', facultyRoutes);
 app.use('/api/gec', gecRoutes);
+app.use('/api/workflow', workflowRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

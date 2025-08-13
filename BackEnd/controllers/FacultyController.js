@@ -2,6 +2,705 @@ const { pool } = require('../config/database');
 const WorkflowService = require('../services/WorkflowService');
 
 class FacultyController {
+    // Get students supervised by this faculty member
+    static async getMyStudents(req, res) {
+        try {
+            
+            const userId = req.user.id;
+            
+            // Get faculty ID from user ID
+            const facultyQuery = await pool.query(`
+                SELECT f.id as faculty_id
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `, [userId]);
+
+            if (facultyQuery.rows.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Faculty member not found'
+                });
+            }
+
+            const facultyId = facultyQuery.rows[0].faculty_id;
+
+            // Get students supervised by this faculty member
+            const studentsQuery = `
+                SELECT 
+                    u.*,
+                    d.dept_name,
+                    d.dept_code,
+                    f1.first_name || ' ' || f1.last_name as primary_supervisor_name,
+                    f1.email as primary_supervisor_email,
+                    f2.first_name || ' ' || f2.last_name as co_supervisor_name,
+                    f2.email as co_supervisor_email,
+                    swp.current_stage,
+                    swp.total_forms_submitted,
+                    swp.total_forms_approved,
+                    swp.has_pending_actions,
+                    swp.current_gpa,
+                    CASE 
+                        WHEN u.primary_supervisor_id = $1 THEN 'Primary Supervisor'
+                        WHEN u.co_supervisor_id = $1 THEN 'Co-Supervisor'
+                        ELSE 'Unknown'
+                    END as supervision_type
+                FROM users u
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN faculty f1 ON u.primary_supervisor_id = f1.id
+                LEFT JOIN faculty f2 ON u.co_supervisor_id = f2.id
+                LEFT JOIN student_workflow_progress swp ON u.id = swp.student_id
+                WHERE u.role = 'student' 
+                AND (u.primary_supervisor_id = $1 OR u.co_supervisor_id = $1)
+                AND u.is_active = true
+                ORDER BY u.created_at DESC
+            `;
+
+            const studentsResult = await pool.query(studentsQuery, [facultyId]);
+
+            res.json({
+                success: true,
+                data: studentsResult.rows,
+                faculty_id: facultyId,
+                count: studentsResult.rows.length
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching supervised students',
+                error: error.message
+            });
+        }
+    }
+
+    // Get faculty dashboard data
+    static async getFacultyDashboard(req, res) {
+        try {
+            const userId = req.user.id;
+
+            // Get faculty information
+            const facultyQuery = await pool.query(`
+                SELECT 
+                    f.*,
+                    u.id as user_id,
+                    d.dept_name,
+                    d.dept_code
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                LEFT JOIN departments d ON f.department_id = d.id
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `, [userId]);
+
+            if (facultyQuery.rows.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Faculty member not found'
+                });
+            }
+
+            const faculty = facultyQuery.rows[0];
+
+            // Get supervised students count
+            const studentsCount = await pool.query(`
+                SELECT COUNT(*) as total_students
+                FROM users u
+                WHERE u.role = 'student' 
+                AND (u.primary_supervisor_id = $1 OR u.co_supervisor_id = $1)
+                AND u.is_active = true
+            `, [faculty.id]);
+
+            // Get pending approvals count
+            const pendingCount = await pool.query(`
+                SELECT COUNT(*) as pending_approvals
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                WHERE (u.primary_supervisor_id = $1 OR u.co_supervisor_id = $1)
+                AND fs.supervisor_approval_status = 'pending'
+            `, [faculty.id]);
+
+            res.json({
+                success: true,
+                data: {
+                    faculty_info: faculty,
+                    stats: {
+                        total_students: parseInt(studentsCount.rows[0].total_students),
+                        pending_approvals: parseInt(pendingCount.rows[0].pending_approvals)
+                    }
+                }
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Error fetching faculty dashboard',
+                error: error.message
+            });
+        }
+    }
+
+    // DPRC Dashboard functionality
+    
+    // Get DPRC dashboard data for faculty member
+    static async getDPRCDashboard(req, res) {
+        try {
+            const userId = req.user.id;
+            
+            // Check if faculty is DPRC member
+            const dprcMemberCheck = await pool.query(`
+                SELECT 
+                    dma.id as assignment_id,
+                    dma.role_in_committee,
+                    dp.id as dprc_id,
+                    dp.committee_name,
+                    d.id as department_id,
+                    d.dept_name,
+                    d.dept_code
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                JOIN dprc_member_assignments dma ON f.id = dma.faculty_id
+                JOIN dprc_committees dp ON dma.dprc_committee_id = dp.id
+                JOIN departments d ON dp.department_id = d.id
+                WHERE u.id = $1 AND u.role = 'faculty' AND dma.is_active = true AND dp.is_active = true
+            `, [userId]);
+
+            if (dprcMemberCheck.rows.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied. You are not a DPRC member.'
+                });
+            }
+
+            const dprcInfo = dprcMemberCheck.rows[0];
+
+            // Get faculty ID for this user
+            const facultyIdQuery = await pool.query(`
+                SELECT f.id as faculty_id
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `, [userId]);
+
+            const currentFacultyId = facultyIdQuery.rows[0]?.faculty_id;
+
+            // Get pending forms requiring DPRC approval that this faculty member hasn't voted on
+            const pendingForms = await pool.query(`
+                SELECT 
+                    fs.id,
+                    fs.submitted_at,
+                    fs.semester,
+                    fs.academic_year,
+                    ft.form_name,
+                    ft.form_code,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.student_id,
+                    u.email as student_email,
+                    u.research_area,
+                    d.dept_name,
+                    das.overall_status,
+                    das.approved_by,
+                    das.rejected_by,
+                    das.pending_members,
+                    das.approved_count,
+                    das.rejected_count,
+                    das.total_members,
+                    CASE 
+                        WHEN das.overall_status = 'pending' THEN 'awaiting_your_vote'
+                        ELSE 'other'
+                    END as approval_stage
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN dprc_form_approval_summary das ON fs.id = das.form_submission_id
+                WHERE u.department_id = $1 
+                AND ft.requires_dprc_approval = true
+                AND fs.dprc_approval_status = 'pending'
+                AND NOT EXISTS (
+                    SELECT 1 FROM dprc_member_approvals dma 
+                    WHERE dma.form_submission_id = fs.id 
+                    AND dma.faculty_id = $2
+                )
+                ORDER BY fs.submitted_at ASC
+            `, [dprcInfo.department_id, currentFacultyId]);
+
+            // Get recently processed forms by this DPRC with individual member tracking
+            const recentForms = await pool.query(`
+                SELECT 
+                    fs.id,
+                    fs.submitted_at,
+                    fs.dprc_approved_at,
+                    fs.dprc_approval_status,
+                    fs.status as form_status,
+                    ft.form_name,
+                    ft.form_code,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.student_id,
+                    das.overall_status,
+                    das.approved_by,
+                    das.rejected_by,
+                    das.approved_count,
+                    das.rejected_count,
+                    das.total_members,
+                    das.last_decision_date,
+                    -- Check if current faculty voted on this form
+                    CASE WHEN dma_current.id IS NOT NULL THEN dma_current.approval_status ELSE NULL END as my_decision,
+                    CASE WHEN dma_current.id IS NOT NULL THEN dma_current.comments ELSE NULL END as my_comments,
+                    CASE WHEN dma_current.id IS NOT NULL THEN dma_current.decision_date ELSE NULL END as my_decision_date
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN dprc_form_approval_summary das ON fs.id = das.form_submission_id
+                LEFT JOIN dprc_member_approvals dma_current ON fs.id = dma_current.form_submission_id AND dma_current.faculty_id = $2
+                WHERE u.department_id = $1 
+                AND ft.requires_dprc_approval = true
+                AND (fs.dprc_approval_status IN ('approved', 'rejected') OR fs.status IN ('approved_by_dprc', 'awaiting_supervisor_consent', 'supervisor_approved', 'gec_ready'))
+                ORDER BY COALESCE(das.last_decision_date, fs.last_updated_at, fs.submitted_at) DESC
+                LIMIT 20
+            `, [dprcInfo.department_id, currentFacultyId]);
+
+            res.json({
+                success: true,
+                data: {
+                    dprc_info: dprcInfo,
+                    pending_forms: pendingForms.rows,
+                    recent_forms: recentForms.rows,
+                    department_info: {
+                        id: dprcInfo.department_id,
+                        dept_name: dprcInfo.dept_name,
+                        dept_code: dprcInfo.dept_code
+                    }
+                }
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Error loading DPRC dashboard',
+                error: error.message
+            });
+        }
+    }
+
+    // Process DPRC approval/rejection with individual member tracking
+    static async processDPRCApproval(req, res) {
+        try {
+            const { submissionId } = req.params;
+            const { action, comments } = req.body; // action: 'approve' or 'reject'
+            const userId = req.user.id;
+
+            if (!['approve', 'reject'].includes(action)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid action. Must be "approve" or "reject"'
+                });
+            }
+
+            // Get faculty ID from user ID
+            const facultyQuery = await pool.query(`
+                SELECT f.id as faculty_id
+                FROM users u
+                JOIN faculty f ON u.email = f.email
+                WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+            `, [userId]);
+
+            if (facultyQuery.rows.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Faculty member not found'
+                });
+            }
+
+            const facultyId = facultyQuery.rows[0].faculty_id;
+            const status = action === 'approve' ? 'approved' : 'rejected';
+
+            // Use the new individual tracking function to record the vote
+            const voteResult = await pool.query(`
+                SELECT record_dprc_member_vote($1, $2, $3, $4, $5, $6) as result
+            `, [
+                facultyId, 
+                submissionId, 
+                status, 
+                comments,
+                req.ip || null,
+                req.get('User-Agent') || null
+            ]);
+
+            const result = voteResult.rows[0].result;
+
+            if (!result.success) {
+                return res.status(400).json({
+                    success: false,
+                    message: result.message
+                });
+            }
+
+            // Get updated form status with individual member tracking
+            const statusQuery = await pool.query(`
+                SELECT 
+                    fs.*,
+                    das.overall_status,
+                    das.approved_by,
+                    das.rejected_by,
+                    das.pending_members,
+                    das.approved_count,
+                    das.rejected_count,
+                    das.total_members
+                FROM form_submissions fs
+                LEFT JOIN dprc_form_approval_summary das ON fs.id = das.form_submission_id
+                WHERE fs.id = $1
+            `, [submissionId]);
+
+            const formData = statusQuery.rows[0];
+
+            // Check form type and handle DPRC approval completion
+            const formTypeQuery = `
+                SELECT ft.form_code, ft.requires_dec_approval, ft.requires_dprc_approval, ft.requires_supervisor_approval, 
+                       ft.requires_gec_approval, ft.requires_hod_approval, ft.requires_chairperson_approval
+                FROM form_types ft WHERE ft.id = $1
+            `;
+            const formTypeResult = await pool.query(formTypeQuery, [formData.form_type_id]);
+            
+            if (formTypeResult.rows.length > 0) {
+                const formType = formTypeResult.rows[0];
+                
+                // Handle DPRC approval completion for all forms
+                if (formData.dprc_approval_status === 'approved') {
+                    console.log(`Form ${formType.form_code} (ID: ${submissionId}) approved by all DPRC members`);
+                    
+                    // Update form status to approved_by_dprc
+                    await pool.query(`
+                        UPDATE form_submissions 
+                        SET status = 'approved_by_dprc', last_updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [submissionId]);
+                    
+                    // Special handling for onboarding forms and supervisor assignment requests
+                    if (formType.form_code === 'ONBOARDING-001' || formType.form_code === 'PHDEE02-A') {
+                        console.log(`${formType.form_code} form ${submissionId} approved by DPRC - waiting for supervisor consent`);
+                        
+                        // Get the supervisor information from the form data
+                        const formDataObj = formData.form_data ? JSON.parse(formData.form_data) : {};
+                        const supervisorEmail = formDataObj.supervisorEmail || formDataObj.supervisor_email;
+                        
+                        if (supervisorEmail) {
+                            // Find the supervisor by email
+                            const supervisorQuery = await pool.query(`
+                                SELECT f.id as faculty_id, u.id as user_id, u.first_name, u.last_name
+                            FROM faculty f
+                            JOIN users u ON f.email = u.email
+                            WHERE f.email = $1 AND u.role = 'faculty' AND u.is_active = true
+                        `, [supervisorEmail]);
+                        
+                        if (supervisorQuery.rows.length > 0) {
+                            const supervisor = supervisorQuery.rows[0];
+                            
+                            // Get student information
+                            const studentQuery = await pool.query(`
+                                SELECT u.first_name, u.last_name, u.student_id
+                                FROM users u
+                                JOIN form_submissions fs ON u.id = fs.user_id
+                                WHERE fs.id = $1
+                            `, [submissionId]);
+                            
+                            if (studentQuery.rows.length > 0) {
+                                const student = studentQuery.rows[0];
+                                
+                                // Create notification for supervisor to fill consent form
+                                await pool.query(`
+                                    INSERT INTO notifications (
+                                        recipient_id, recipient_type, title, message, notification_type,
+                                        action_required, action_url, related_form_id
+                                    ) VALUES ($1, 'faculty', $2, $3, 'approval_request', true, $4, $5)
+                                `, [
+                                    supervisor.user_id,
+                                    'Supervisor Consent Form Required',
+                                    `DPRC has approved the ${formType.form_code === 'ONBOARDING-001' ? 'onboarding form' : 'supervisor assignment request'} for ${student.first_name} ${student.last_name} (${student.student_id}). Please fill the Supervisor Consent Form to complete the supervision assignment.`,
+                                    '/forms/SupervisorConsent',
+                                    submissionId
+                                ]);
+                                
+                                // Update form status to awaiting_supervisor_consent
+                                await pool.query(`
+                                    UPDATE form_submissions 
+                                    SET status = 'awaiting_supervisor_consent', last_updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = $1
+                                `, [submissionId]);
+                                
+                                // Create a new Supervisor Consent Form submission for the supervisor to fill
+                                const consentFormTypeQuery = await pool.query(`
+                                    SELECT id FROM form_types WHERE form_code = 'PHDEE02-A'
+                                `);
+                                
+                                if (consentFormTypeQuery.rows.length > 0) {
+                                    const consentFormTypeId = consentFormTypeQuery.rows[0].id;
+                                    
+                                    // Create the supervisor consent form submission
+                                    await pool.query(`
+                                        INSERT INTO form_submissions (
+                                            user_id, form_type_id, status, submitted_at, 
+                                            form_data, dprc_approval_status, supervisor_approval_status,
+                                            hod_approval_status, chairperson_approval_status, gec_approval_status
+                                        ) VALUES (
+                                            $1, $2, 'submitted', CURRENT_TIMESTAMP,
+                                            $3, 'not_required', 'pending', 'not_required', 'not_required', 'not_required'
+                                        )
+                                    `, [
+                                        supervisor.user_id, // supervisor's user ID
+                                        consentFormTypeId,
+                                        JSON.stringify({
+                                            original_onboarding_submission_id: submissionId,
+                                            student_id: student.student_id,
+                                            student_name: `${student.first_name} ${student.last_name}`,
+                                            supervisor_id: supervisor.id,
+                                            supervisor_name: `${supervisor.first_name} ${supervisor.last_name}`
+                                        })
+                                    ]);
+                                    
+                                    console.log(`Created Supervisor Consent Form submission for supervisor ${supervisor.first_name} ${supervisor.last_name} for student ${student.first_name} ${student.last_name}`);
+                                }
+                                
+                                console.log(`Notification sent to supervisor ${supervisor.first_name} ${supervisor.last_name} for student ${student.first_name} ${student.last_name}`);
+                            }
+                        } else {
+                            console.log(`Supervisor with email ${supervisorEmail} not found in faculty table`);
+                        }
+                    } else {
+                        console.log(`No supervisor email found in form data for submission ${submissionId}`);
+                    }
+                } else {
+                    // For ONBOARDING-001: After DPRC approval, form is complete and student can submit Supervisor Consent Form
+                    if (formType.form_code === 'ONBOARDING-001') {
+                        await pool.query(`
+                            UPDATE form_submissions 
+                            SET status = 'approved_by_dprc', final_approval_status = 'approved', final_approved_at = CURRENT_TIMESTAMP
+                            WHERE id = $1
+                        `, [submissionId]);
+                    }
+                    // For PHDEE02-A: After DPRC approval, send to supervisor for approval
+                    else if (formType.form_code === 'PHDEE02-A') {
+                        // Ensure the student's primary_supervisor_id is set before sending to supervisor
+                        const supervisorQuery = await pool.query(`
+                            SELECT u.primary_supervisor_id, f.id as faculty_id
+                            FROM users u
+                            JOIN faculty f ON u.primary_supervisor_id = f.id
+                            WHERE u.id = $1
+                        `, [formData.user_id]);
+
+                        let supervisorId = null;
+                        if (supervisorQuery.rows.length > 0) {
+                            supervisorId = supervisorQuery.rows[0].primary_supervisor_id;
+                        } else if (formData.supervisor_id) {
+                            // fallback: use supervisor_id from form data if available
+                            supervisorId = formData.supervisor_id;
+                            await pool.query(`
+                                UPDATE users SET primary_supervisor_id = $1 WHERE id = $2
+                            `, [supervisorId, formData.user_id]);
+                        }
+
+                        if (supervisorId) {
+                            // Set the student's primary_supervisor_id if not already set
+                            await pool.query(`
+                                UPDATE users SET primary_supervisor_id = $1 WHERE id = $2
+                            `, [supervisorId, formData.user_id]);
+                        }
+
+                        // Fallback: If status is still 'approved_by_dprc', force transition to 'awaiting_supervisor_consent'
+                        const statusCheck = await pool.query(`
+                            SELECT status FROM form_submissions WHERE id = $1
+                        `, [submissionId]);
+                        if (statusCheck.rows.length > 0 && statusCheck.rows[0].status === 'approved_by_dprc') {
+                            await pool.query(`
+                                UPDATE form_submissions 
+                                SET status = 'awaiting_supervisor_consent', last_updated_at = CURRENT_TIMESTAMP
+                                WHERE id = $1
+                            `, [submissionId]);
+                        }
+
+                        // Get supervisor information for notification
+                        const notifySupervisorQuery = await pool.query(`
+                            SELECT u.primary_supervisor_id, f.first_name, f.last_name, f.email
+                            FROM users u
+                            JOIN faculty f ON u.primary_supervisor_id = f.id
+                            WHERE u.id = $1
+                        `, [formData.user_id]);
+                        if (notifySupervisorQuery.rows.length > 0) {
+                            const supervisor = notifySupervisorQuery.rows[0];
+                            // Create notification for supervisor
+                            await pool.query(`
+                                INSERT INTO notifications (
+                                    recipient_id, recipient_type, title, message, notification_type,
+                                    action_required, action_url, related_form_id
+                                ) VALUES ($1, 'faculty', $2, $3, 'approval_request', true, $4, $5)
+                            `, [
+                                supervisor.primary_supervisor_id,
+                                'Supervisor Consent Form Requires Approval',
+                                `DPRC has approved the Supervisor Consent Form for ${formData.student_name}. Please review and approve.`,
+                                '/faculty/approvals',
+                                submissionId
+                            ]);
+                        }
+                    }
+                    // For other forms, check if all required approvals are complete
+                    else {
+                        let allApproved = true;
+                        
+                        if (formType.requires_dec_approval && formData.dec_approval_status !== 'approved') allApproved = false;
+                        if (formType.requires_dprc_approval && formData.dprc_approval_status !== 'approved') allApproved = false;
+                        if (formType.requires_supervisor_approval && formData.supervisor_approval_status !== 'approved') allApproved = false;
+                        if (formType.requires_gec_approval && formData.gec_approval_status !== 'approved') allApproved = false;
+                        
+                        if (allApproved && formData.dprc_approval_status === 'approved') {
+                            // Update final approval status
+                            await pool.query(`
+                                UPDATE form_submissions 
+                                SET final_approval_status = 'approved', final_approved_at = CURRENT_TIMESTAMP
+                                WHERE id = $1
+                            `, [submissionId]);
+                        }
+                    }
+                }
+            }
+        }
+
+            // Determine the next step message
+            let nextStepMessage = '';
+            if (formTypeResult.rows.length > 0) {
+                const formType = formTypeResult.rows[0];
+                if ((formType.form_code === 'ONBOARDING-001' || formType.form_code === 'PHDEE02-A') && formData.dprc_approval_status === 'approved') {
+                    nextStepMessage = 'Supervisor will be notified to fill the consent form.';
+                } else if (formData.dprc_approval_status === 'approved') {
+                    nextStepMessage = 'Form has been approved by DPRC.';
+                } else if (formData.dprc_approval_status === 'rejected') {
+                    nextStepMessage = 'Form has been rejected by DPRC.';
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `Form ${action}d successfully by DPRC. ${nextStepMessage}`,
+                data: {
+                    submission_id: submissionId,
+                    your_decision: status,
+                    overall_status: formData.overall_status,
+                    approved_by: formData.approved_by || [],
+                    rejected_by: formData.rejected_by || [],
+                    pending_members: formData.pending_members || [],
+                    progress: `${formData.approved_count || 0}/${formData.total_members || 0} approved`,
+                    next_step: nextStepMessage
+                }
+            });
+
+        } catch (error) {
+            console.error('Error processing DPRC approval:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Error processing DPRC approval',
+                error: error.message
+            });
+        }
+    }
+
+    // Get form submission details for DPRC member
+    static async getDPRCFormDetails(req, res) {
+        try {
+            const { submissionId } = req.params;
+            const userId = req.user.id;
+
+            // Verify DPRC member access
+            const accessCheck = await pool.query(`
+                SELECT 
+                    fs.id,
+                    u.department_id as student_dept_id,
+                    dma.id as dprc_assignment_id
+                FROM form_submissions fs
+                JOIN users u ON fs.user_id = u.id
+                JOIN users faculty_user ON faculty_user.id = $2
+                JOIN faculty f ON faculty_user.email = f.email
+                JOIN dprc_member_assignments dma ON f.id = dma.faculty_id
+                JOIN dprc_committees dp ON dma.dprc_committee_id = dp.id
+                WHERE fs.id = $1 
+                AND dp.department_id = u.department_id
+                AND dma.is_active = true
+                AND dp.is_active = true
+            `, [submissionId, userId]);
+
+            if (accessCheck.rows.length === 0) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Access denied. You are not authorized to view this form.'
+                });
+            }
+
+            // Get detailed submission information
+            const query = `
+                SELECT 
+                    fs.*,
+                    ft.form_code,
+                    ft.form_name,
+                    ft.description,
+                    ft.workflow_stage,
+                    ft.form_schema,
+                    u.first_name || ' ' || u.last_name as student_name,
+                    u.email as student_email,
+                    u.student_id,
+                    u.current_semester,
+                    u.academic_year,
+                    u.research_area,
+                    d.dept_name as department,
+                    d.dept_code as department_code,
+                    f1.first_name || ' ' || f1.last_name as primary_supervisor_name,
+                    f1.email as primary_supervisor_email,
+                    f2.first_name || ' ' || f2.last_name as co_supervisor_name,
+                    f2.email as co_supervisor_email
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                JOIN users u ON fs.user_id = u.id
+                LEFT JOIN departments d ON u.department_id = d.id
+                LEFT JOIN faculty f1 ON u.primary_supervisor_id = f1.id
+                LEFT JOIN faculty f2 ON u.co_supervisor_id = f2.id
+                WHERE fs.id = $1
+            `;
+
+            const result = await pool.query(query, [submissionId]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Submission not found'
+                });
+            }
+
+            const submission = result.rows[0];
+
+            // Get attachments
+            const attachmentsQuery = `
+                SELECT id, file_name, file_type, upload_type, uploaded_at, is_verified, verification_comments
+                FROM form_attachments 
+                WHERE form_submission_id = $1
+                ORDER BY uploaded_at DESC
+            `;
+
+            const attachments = await pool.query(attachmentsQuery, [submissionId]);
+
+            res.json({
+                success: true,
+                data: {
+                    ...submission,
+                    attachments: attachments.rows
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching DPRC form details:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Failed to fetch form details',
+                error: error.message
+            });
+        }
+    }
+
     // Get all faculty members with their roles
     static async getAllFaculty(req, res) {
         try {
@@ -401,6 +1100,9 @@ class FacultyController {
                     u.first_name || ' ' || u.last_name as student_name,
                     u.student_id,
                     CASE 
+                        -- Special handling for supervisor consent forms
+                        WHEN (ft.form_code = 'ONBOARDING-001' OR ft.form_code = 'PHDEE02-A') AND fs.status = 'awaiting_supervisor_consent' THEN 'supervisor_consent'
+                        -- Regular approval stages (only DPRC, Supervisor, and GEC as requested)
                         WHEN fs.dec_approval_status = 'pending' AND EXISTS(
                             SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'dec_member' AND fr.is_active = true
                         ) THEN 'dec'
@@ -412,17 +1114,14 @@ class FacultyController {
                             JOIN gec_committees gc ON gcm.committee_id = gc.id 
                             WHERE gc.student_user_id = u.id AND gcm.faculty_id = $1 AND gcm.is_active = true
                         ) THEN 'gec'
-                        WHEN fs.hod_approval_status = 'pending' AND EXISTS(
-                            SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'hod' AND fr.is_active = true
-                        ) THEN 'hod'
-                        WHEN fs.chairperson_approval_status = 'pending' AND EXISTS(
-                            SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'chairperson' AND fr.is_active = true
-                        ) THEN 'chairperson'
                     END as approval_stage
                 FROM form_submissions fs
                 JOIN form_types ft ON fs.form_type_id = ft.id
                 JOIN users u ON fs.user_id = u.id
                 WHERE (
+                    -- Special case for supervisor consent forms
+                    ((ft.form_code = 'ONBOARDING-001' OR ft.form_code = 'PHDEE02-A') AND fs.status = 'awaiting_supervisor_consent') OR
+                    -- Regular approval cases (only DPRC, Supervisor, and GEC as requested)
                     (fs.dec_approval_status = 'pending' AND EXISTS(
                         SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'dec_member' AND fr.is_active = true
                     )) OR
@@ -433,15 +1132,9 @@ class FacultyController {
                         SELECT 1 FROM gec_committee_members gcm 
                         JOIN gec_committees gc ON gcm.committee_id = gc.id 
                         WHERE gc.student_user_id = u.id AND gcm.faculty_id = $1 AND gcm.is_active = true
-                    )) OR
-                    (fs.hod_approval_status = 'pending' AND EXISTS(
-                        SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'hod' AND fr.is_active = true
-                    )) OR
-                    (fs.chairperson_approval_status = 'pending' AND EXISTS(
-                        SELECT 1 FROM faculty_roles fr WHERE fr.faculty_id = $1 AND fr.role = 'chairperson' AND fr.is_active = true
                     ))
                 )
-                AND fs.status = 'submitted'
+                AND fs.status IN ('submitted', 'awaiting_supervisor_consent')
                 ORDER BY fs.submitted_at DESC
             `;
 
@@ -478,7 +1171,7 @@ class FacultyController {
                 
                 // Determine approval stage based on the form submission
                 const submissionQuery = `
-                    SELECT ft.form_code, fs.supervisor_approval_status, fs.hod_approval_status, fs.chairperson_approval_status
+                    SELECT ft.form_code, fs.status, fs.supervisor_approval_status, fs.hod_approval_status, fs.chairperson_approval_status
                     FROM form_submissions fs
                     JOIN form_types ft ON fs.form_type_id = ft.id
                     WHERE fs.id = $1
@@ -502,10 +1195,19 @@ class FacultyController {
                 } else if (submission.chairperson_approval_status === 'pending') {
                     approval_stage = 'chairperson';
                 } else {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'No pending approval stage found for this submission'
-                    });
+                    // Check if this is a supervisor consent form that needs supervisor action
+                    const statusQuery = `
+                        SELECT status FROM form_submissions WHERE id = $1
+                    `;
+                    const statusResult = await pool.query(statusQuery, [form_submission_id]);
+                    if (statusResult.rows.length > 0 && statusResult.rows[0].status === 'awaiting_supervisor_consent') {
+                        approval_stage = 'supervisor';
+                    } else {
+                        return res.status(400).json({
+                            success: false,
+                            message: 'No pending approval stage found for this submission'
+                        });
+                    }
                 }
             } else {
                 // Original route format
@@ -551,7 +1253,107 @@ class FacultyController {
                 });
             }
 
-            // Verify faculty has permission to approve at this stage
+            // Check if this is a supervisor consent form that should use different approval logic
+            const formTypeQuery = `
+                SELECT ft.form_code, fs.status 
+                FROM form_submissions fs
+                JOIN form_types ft ON fs.form_type_id = ft.id
+                WHERE fs.id = $1
+            `;
+            const formTypeResult = await pool.query(formTypeQuery, [form_submission_id]);
+            
+            // If this is a PHDEE02-A (Supervisor Consent Form) and status is awaiting_supervisor_consent,
+            // redirect to supervisor consent endpoint logic
+            if (formTypeResult.rows.length > 0 && 
+                formTypeResult.rows[0].form_code === 'PHDEE02-A' && 
+                formTypeResult.rows[0].status === 'awaiting_supervisor_consent') {
+                
+                // Handle supervisor consent approval directly
+                const studentQuery = await pool.query(`
+                    SELECT fs.user_id, u.primary_supervisor_id
+                    FROM form_submissions fs
+                    JOIN users u ON fs.user_id = u.id
+                    WHERE fs.id = $1
+                `, [form_submission_id]);
+                
+                if (studentQuery.rows.length === 0 || studentQuery.rows[0].primary_supervisor_id !== actualFacultyId) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'You are not authorized to approve this supervisor consent form'
+                    });
+                }
+                
+                const studentUserId = studentQuery.rows[0].user_id;
+                
+                if (status === 'approved') {
+                    // Approve the consent form - mark as approved and enable GEC formation
+                    await pool.query(`
+                        UPDATE form_submissions 
+                        SET 
+                            status = 'approved',
+                            final_approval_status = 'approved',
+                            supervisor_approval_status = 'approved',
+                            supervisor_approved_by = $1,
+                            supervisor_approved_at = CURRENT_TIMESTAMP,
+                            last_updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $2
+                    `, [actualFacultyId, form_submission_id]);
+                    
+                    // Create notification for student
+                    await pool.query(`
+                        INSERT INTO notifications (
+                            recipient_id, recipient_type, title, message, notification_type
+                        ) VALUES ($1, 'student', $2, $3, 'success')
+                    `, [
+                        studentUserId,
+                        'Supervisor Assigned Successfully',
+                        'Your supervisor has been assigned and you can now proceed to GEC formation.'
+                    ]);
+                    
+                } else if (status === 'rejected') {
+                    // Reject the consent form
+                    await pool.query(`
+                        UPDATE form_submissions 
+                        SET status = 'rejected_by_supervisor', 
+                            supervisor_approval_status = 'rejected',
+                            supervisor_approved_by = $1,
+                            supervisor_approved_at = CURRENT_TIMESTAMP,
+                            supervisor_comments = $2,
+                            last_updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $3
+                    `, [actualFacultyId, comments || 'Supervisor rejected the consent form', form_submission_id]);
+                    
+                    // Remove supervisor assignment
+                    await pool.query(`
+                        UPDATE users 
+                        SET primary_supervisor_id = NULL, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = $1
+                    `, [studentUserId]);
+                    
+                    // Create notification for student
+                    await pool.query(`
+                        INSERT INTO notifications (
+                            recipient_id, recipient_type, title, message, notification_type
+                        ) VALUES ($1, 'student', $2, $3, 'warning')
+                    `, [
+                        studentUserId,
+                        'Supervisor Consent Rejected',
+                        `Your supervisor has rejected the consent form. You can select another supervisor and resubmit. Reason: ${comments || 'No specific reason provided'}`
+                    ]);
+                }
+                
+                return res.json({
+                    success: true,
+                    message: `Supervisor consent form ${status} successfully`,
+                    data: {
+                        submissionId: form_submission_id,
+                        status: status,
+                        approvedBy: actualFacultyId
+                    }
+                });
+            }
+
+            // Verify faculty has permission to approve at this stage (for other forms)
             const permissionQuery = `
                 SELECT 1 FROM faculty f
                 LEFT JOIN faculty_roles fr ON f.id = fr.faculty_id
@@ -730,7 +1532,7 @@ class FacultyController {
             const submission = result.rows[0];
 
             // Check if faculty has permission to view this submission
-            const hasPermission = await this.checkFacultyPermission(actualFacultyId, submission);
+            const hasPermission = await FacultyController.checkFacultyPermission(actualFacultyId, submission);
             
             if (!hasPermission) {
                 return res.status(403).json({

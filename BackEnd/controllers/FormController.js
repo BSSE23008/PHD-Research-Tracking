@@ -354,63 +354,42 @@ class FormController {
                 }
             }
 
-            // Create form submission
+            // Create form submission with proper initial status
             const insertQuery = `
                 INSERT INTO form_submissions (
                     user_id, form_type_id, form_data, workflow_stage, 
                     semester, academic_year, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, 'submitted')
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING *
             `;
 
             const currentYear = new Date().getFullYear();
             const defaultAcademicYear = academicYear || `${currentYear}-${currentYear + 1}`;
 
+            // Determine initial status based on form type and requirements
+            let initialStatus = 'submitted';
+            if (formCode === 'ONBOARDING-001' || formCode === 'PHDEE02-A') {
+                // These forms need DPRC approval first
+                initialStatus = formType.requires_dprc_approval ? 'pending_dprc_approval' : 'submitted';
+            }
+
             const result = await pool.query(insertQuery, [
                 userId, 
                 formType.id, 
                 JSON.stringify(formData), 
                 formType.workflow_stage,
-                semester || 1,
-                defaultAcademicYear
+                semester || '1st',
+                defaultAcademicYear,
+                initialStatus
             ]);
 
             const submission = result.rows[0];
 
             // Handle special form types
             if (formCode === 'PHDEE02-A') {
-                // Supervisor consent form - create supervisor consent record and assign supervisor
-                const formDataWithUserId = {
-                    ...formData,
-                    studentUserId: userId,
-                    faculty_id: req.user.faculty_id || req.user.id  // Add faculty ID
-                };
-                await this.handleSupervisorConsentForm(submission.id, formDataWithUserId);
-                
-                // Handle workflow transition
-                const WorkflowService = require('../services/WorkflowService');
-                const workflowResult = await WorkflowService.handleSupervisorConsentSubmission(
-                    submission.id, 
-                    formDataWithUserId
-                );
-                
-                if (workflowResult.success) {
-                    // Clear saved progress
-                    await pool.query(
-                        'DELETE FROM form_progress WHERE user_id = $1 AND form_type_id = $2',
-                        [userId, formType.id]
-                    );
-
-                    return res.json({
-                        success: true,
-                        message: workflowResult.message,
-                        data: {
-                            submissionId: submission.id,
-                            studentAssigned: true,
-                            supervisorId: workflowResult.supervisorId
-                        }
-                    });
-                }
+                // Supervisor assignment request form - this should go through normal approval process
+                // Don't immediately assign supervisor - wait for DPRC approval and supervisor consent
+                console.log(`PHDEE02-A form submitted by student ${userId} - will go through approval process`);
             }
 
             // Clear saved progress
@@ -420,7 +399,7 @@ class FormController {
             );
 
             // Send notifications to approvers
-            await this.sendApprovalNotifications(submission, formType);
+            await FormController.sendApprovalNotifications(submission, formType);
 
             res.json({
                 success: true,
@@ -548,7 +527,7 @@ class FormController {
             console.log('Onboarding form submission created:', submission.id);
 
             // Send notifications to approvers
-            await this.sendApprovalNotifications(submission, formType);
+            await FormController.sendApprovalNotifications(submission, formType);
 
         } catch (error) {
             console.error('Error handling initial onboarding data:', error);
@@ -579,48 +558,27 @@ class FormController {
             // Create a basic consent form record that can be filled by supervisor later
             const insertQuery = `
                 INSERT INTO supervisor_consent_forms (
-                    form_submission_id, supervisor_id, student_user_id,
-                    supervisor_name, supervisor_designation, supervisor_department,
-                    area_of_research, contact_no, email, research_topic,
-                    hec_approved_supervisor_ref, hec_approval_date,
-                    num_existing_phd_students, num_existing_ms_students,
-                    supervision_type, supervisor_consent, status
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                    form_submission_id, student_user_id, primary_supervisor_id,
+                    research_topic, research_objectives, methodology, expected_outcomes,
+                    primary_supervisor_consent, status
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (form_submission_id) DO UPDATE SET
-                    supervisor_id = EXCLUDED.supervisor_id,
-                    supervisor_name = EXCLUDED.supervisor_name,
-                    supervisor_designation = EXCLUDED.supervisor_designation,
-                    supervisor_department = EXCLUDED.supervisor_department,
-                    area_of_research = EXCLUDED.area_of_research,
-                    contact_no = EXCLUDED.contact_no,
-                    email = EXCLUDED.email,
                     research_topic = EXCLUDED.research_topic,
-                    hec_approved_supervisor_ref = EXCLUDED.hec_approved_supervisor_ref,
-                    hec_approval_date = EXCLUDED.hec_approval_date,
-                    num_existing_phd_students = EXCLUDED.num_existing_phd_students,
-                    num_existing_ms_students = EXCLUDED.num_existing_ms_students,
-                    supervision_type = EXCLUDED.supervision_type,
-                    supervisor_consent = EXCLUDED.supervisor_consent,
+                    research_objectives = EXCLUDED.research_objectives,
+                    methodology = EXCLUDED.methodology,
+                    expected_outcomes = EXCLUDED.expected_outcomes,
                     status = EXCLUDED.status
             `;
 
             await pool.query(insertQuery, [
                 submissionId,
-                formData.supervisorId || null, // Will be null initially when student submits
                 studentUserId,
-                formData.supervisorName || '',
-                formData.supervisorDesignation || '',
-                formData.supervisorDepartment || '',
-                formData.areaOfResearch || formData.projectDescription || '',
-                formData.contactNo || '',
-                formData.email || '',
+                formData.supervisorId || null, // Will be null initially when student submits
                 formData.researchTopic || formData.projectTitle || '',
-                formData.hecApprovedSupervisorRef || '',
-                formData.hecApprovalDate || null,
-                formData.numExistingPhdStudents || 0,
-                formData.numExistingMsStudents || 0,
-                formData.supervisionType || 'main_supervisor',
-                formData.supervisorConsent || false,
+                formData.researchObjectives || '',
+                formData.methodology || '',
+                formData.expectedOutcomes || '',
+                false, // Initial consent status
                 'pending' // Initial status
             ]);
 
@@ -669,10 +627,9 @@ class FormController {
             if (formType.requires_supervisor_approval) {
                 // Get student's supervisor (if assigned)
                 const supervisorQuery = `
-                    SELECT supervisor_id 
-                    FROM supervisor_consent_forms scf
-                    JOIN form_submissions fs ON scf.form_submission_id = fs.id
-                    WHERE fs.user_id = $1 AND fs.status = 'approved'
+                    SELECT primary_supervisor_id as supervisor_id 
+                    FROM users
+                    WHERE id = $1 AND primary_supervisor_id IS NOT NULL
                     LIMIT 1
                 `;
                 const supervisorResult = await pool.query(supervisorQuery, [submission.user_id]);
@@ -764,7 +721,7 @@ class FormController {
                         -- Show other forms from students under this supervisor's supervision
                         (ft.form_code != 'PHDEE02-A' AND EXISTS (
                             SELECT 1 FROM supervisor_consent_forms scf
-                            WHERE scf.supervisor_id = $1 
+                            WHERE scf.primary_supervisor_id = $1 
                             AND scf.student_user_id = u.id
                             AND scf.status = 'approved'
                         ))
@@ -787,7 +744,7 @@ class FormController {
                         -- Count other forms from students under this supervisor's supervision
                         (ft.form_code != 'PHDEE02-A' AND EXISTS (
                             SELECT 1 FROM supervisor_consent_forms scf
-                            WHERE scf.supervisor_id = $1 
+                            WHERE scf.primary_supervisor_id = $1 
                             AND scf.student_user_id = u.id
                             AND scf.status = 'approved'
                         ))
