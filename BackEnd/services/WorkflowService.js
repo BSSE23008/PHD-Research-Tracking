@@ -692,10 +692,24 @@ class WorkflowService {
             
             const consent = result.rows[0];
             const studentId = consent.user_id;
-            const supervisorId = formData.supervisor_id || formData.faculty_id;
+            
+            // Get faculty ID from user ID if needed
+            let supervisorId = formData.supervisor_id || formData.faculty_id;
             
             if (!supervisorId) {
-                return { success: false, message: 'Supervisor ID not found in form data' };
+                // Try to get faculty ID from the user who submitted the consent form
+                const facultyQuery = await pool.query(`
+                    SELECT f.id as faculty_id
+                    FROM users u
+                    JOIN faculty f ON u.email = f.email
+                    WHERE u.id = $1 AND u.role = 'faculty' AND u.is_active = true
+                `, [formData.userId || formData.user_id]);
+                
+                if (facultyQuery.rows.length > 0) {
+                    supervisorId = facultyQuery.rows[0].faculty_id;
+                } else {
+                    return { success: false, message: 'Faculty ID not found. Please ensure you are logged in as a faculty member.' };
+                }
             }
             
             // Assign supervisor to student

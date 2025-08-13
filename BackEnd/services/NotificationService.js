@@ -13,19 +13,21 @@ class NotificationService {
         notificationType = 'info',
         relatedFormId = null,
         actionRequired = false,
-        actionUrl = null
+        actionUrl = null,
+        recipientType = 'student'
     }) {
         try {
             const insertQuery = `
                 INSERT INTO notifications (
-                    user_id, title, message, notification_type,
+                    recipient_id, recipient_type, title, message, notification_type,
                     related_form_id, action_required, action_url
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *
             `;
 
             const result = await pool.query(insertQuery, [
                 userId,
+                recipientType,
                 title,
                 message,
                 notificationType,
@@ -51,9 +53,9 @@ class NotificationService {
     } = {}) {
         try {
             const offset = (page - 1) * limit;
-            let whereClause = 'WHERE n.user_id = $1';
-            let queryParams = [userId];
-            let paramCount = 1;
+            let whereClause = 'WHERE n.recipient_id = $1 AND n.recipient_type = $2';
+            let queryParams = [userId, 'student'];
+            let paramCount = 2;
 
             if (isRead !== null) {
                 paramCount++;
@@ -172,10 +174,10 @@ class NotificationService {
             const countQuery = `
                 SELECT COUNT(*) as unread_count
                 FROM notifications 
-                WHERE user_id = $1 AND is_read = false
+                WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false
             `;
 
-            const result = await pool.query(countQuery, [userId]);
+            const result = await pool.query(countQuery, [userId, 'student']);
             return parseInt(result.rows[0].unread_count);
 
         } catch (error) {
@@ -193,15 +195,15 @@ class NotificationService {
 
             const values = [];
             const placeholders = [];
-            let paramCount = 0;
 
             notifications.forEach((notif, index) => {
-                const baseParam = index * 7;
+                const baseParam = index * 8;
                 placeholders.push(
-                    `($${baseParam + 1}, $${baseParam + 2}, $${baseParam + 3}, $${baseParam + 4}, $${baseParam + 5}, $${baseParam + 6}, $${baseParam + 7})`
+                    `($${baseParam + 1}, $${baseParam + 2}, $${baseParam + 3}, $${baseParam + 4}, $${baseParam + 5}, $${baseParam + 6}, $${baseParam + 7}, $${baseParam + 8})`
                 );
                 values.push(
                     notif.userId,
+                    notif.recipientType || 'student',
                     notif.title,
                     notif.message,
                     notif.notificationType || 'info',
@@ -209,12 +211,11 @@ class NotificationService {
                     notif.actionRequired || false,
                     notif.actionUrl || null
                 );
-                paramCount += 7;
             });
 
             const insertQuery = `
                 INSERT INTO notifications (
-                    user_id, title, message, notification_type,
+                    recipient_id, recipient_type, title, message, notification_type,
                     related_form_id, action_required, action_url
                 ) VALUES ${placeholders.join(', ')}
                 RETURNING *

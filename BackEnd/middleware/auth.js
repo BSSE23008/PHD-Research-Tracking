@@ -35,7 +35,7 @@ const authenticateToken = (req, res, next) => {
   }
 };
 
-// Middleware to check user role
+// Middleware to check user role - FIXED VERSION
 const authorizeRole = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
@@ -44,12 +44,33 @@ const authorizeRole = (...roles) => {
       });
     }
 
+    // For faculty routes, check if user has faculty role
+    if (req.path.includes('/faculty/') || req.originalUrl.includes('/faculty/')) {
+        // console.log('🔍 Faculty route detected, checking faculty role:', req.path);
+      
+      // Check if user has faculty role OR if the required roles include faculty
+      if (req.user.role === 'faculty' || roles.includes('faculty')) {
+        // console.log('✅ Faculty role check passed');
+        return next();
+      } else {
+        // console.log('❌ Faculty role check failed - user role:', req.user.role);
+        return res.status(403).json({ 
+          message: 'Access denied. Faculty role required.' 
+        });
+      }
+    }
+
+    // For non-faculty routes, check against required roles
+    // console.log('🔍 Checking role:', req.user.role, 'against required roles:', roles);
+    
     if (!roles.includes(req.user.role)) {
+      // console.log('❌ Role check failed');
       return res.status(403).json({ 
         message: 'Access denied. Insufficient permissions.' 
       });
     }
 
+    // console.log('✅ Role check passed');
     next();
   };
 };

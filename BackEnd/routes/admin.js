@@ -39,12 +39,19 @@ router.get('/departments/:id', AdminController.getDepartmentDetails);
 router.put('/departments/:id', AdminController.updateDepartment);
 router.delete('/departments/:id', AdminController.deleteDepartment);
 
+// Department DPRC Management
+router.put('/departments/:departmentId/dprc', AdminController.updateDepartmentDPRC);
+
 // DPRC Management
 router.get('/dprc', AdminController.getAllDPRCs);
 router.post('/dprc', AdminController.createDPRC);
 router.get('/dprc/:id', AdminController.getDPRCDetails);
 router.put('/dprc/:id', AdminController.updateDPRC);
 router.get('/faculty/available', AdminController.getAvailableFaculty);
+
+// Faculty User Account Management
+router.post('/faculty/create-user-accounts', AdminController.createFacultyUserAccounts);
+router.get('/faculty/user-status', AdminController.getFacultyUserStatus);
 
 // Reports
 router.get('/reports/progress', AdminController.getProgressReport);
