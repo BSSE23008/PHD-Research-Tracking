@@ -1,50 +1,50 @@
 import React, { useState, useEffect } from 'react';
-import { InputField } from './PHDEE02-A_InputFields';
-import { fetchExtendedUserProfile, getAutoFillData, saveFormProgress, loadFormProgress, submitForm } from '../../utils/api';
-import './Forms.css';
+import { getFormAutoFillData, saveFormProgress, loadFormProgress, submitForm } from '../../utils/api';
+import './logo.css';
 
-const FORM_STEPS = [
-  { id: 0, title: 'Student Information', description: 'Basic student details and contact information' },
-  { id: 1, title: 'Supervisor Information', description: 'Academic supervisor details and contact' },
-  { id: 2, title: 'Project Details', description: 'Research project information and timeline' },
-  { id: 3, title: 'Additional Information', description: 'Supplementary details and declarations' }
-];
-
-export const PHDEE02AForm = ({ onSubmissionComplete, autoFillData }) => {
-  const [currentStep, setCurrentStep] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [autoFilledFields, setAutoFilledFields] = useState(new Set());
-  
+export const PHDEE02AForm = ({ user, onClose, onSubmissionComplete }) => {
   const [formData, setFormData] = useState({
     // Student Information
-    studentName: '',
     studentId: '',
+    studentName: '',
     studentEmail: '',
-    program: '',
-    year: '',
+    department: '',
+    departmentCode: '',
+    currentSemester: '',
+    academicYear: '',
+    researchArea: '',
+    
     // Supervisor Information
+    supervisorId: '',
     supervisorName: '',
     supervisorEmail: '',
-    supervisorTitle: '',
-    supervisorDepartment: '',
-    // Project Details
-    projectTitle: '',
-    projectType: '',
-    estimatedHours: '',
-    startDate: '',
-    endDate: '',
-    projectDescription: '',
+    supervisorDesignation: '',
+    
+    // Research Details
+    researchTopic: '',
+    researchObjectives: '',
+    methodology: '',
+    expectedOutcomes: '',
+    
+    // Consent Details
+    consentDate: '',
+    agreementTerms: false,
+    primarySupervisorConsent: false,
+    studentAgreement: false,
+    termsAccepted: false,
+    
     // Additional Information
-    previousExperience: '',
-    specialRequirements: '',
-    ethicsApproval: false,
-    dataProtection: false,
-    agreementTerms: false
+    comments: '',
+    studentSignature: '',
+    supervisorSignature: ''
   });
 
-  // Load user profile and auto-fill data on component mount
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [autoFilledFields, setAutoFilledFields] = useState(new Set());
+
+  // Load auto-fill data and saved progress on component mount
   useEffect(() => {
     const initializeForm = async () => {
       setLoading(true);
@@ -54,14 +54,13 @@ export const PHDEE02AForm = ({ onSubmissionComplete, autoFillData }) => {
         const progressResult = await loadFormProgress('PHDEE02-A');
         if (progressResult.success && progressResult.data) {
           setFormData(prevData => ({ ...prevData, ...progressResult.data.formData }));
-          setCurrentStep(progressResult.data.stepNumber || 0);
           console.log('Loaded saved form progress');
         }
 
-        // Fetch user profile for auto-fill
-        const profileResult = await fetchExtendedUserProfile();
-        if (profileResult.success) {
-          const autoFillData = getAutoFillData(profileResult.user);
+        // Fetch auto-fill data from backend
+        const autoFillResult = await getFormAutoFillData('PHDEE02-A');
+        if (autoFillResult.success) {
+          const autoFillData = autoFillResult.data;
           const autoFilledFieldNames = new Set();
           
           // Only auto-fill if the field is currently empty
@@ -87,456 +86,390 @@ export const PHDEE02AForm = ({ onSubmissionComplete, autoFillData }) => {
     initializeForm();
   }, []);
 
-  useEffect(() => {
-    if (autoFillData) {
-      setFormData(prev => ({
-        ...prev,
-        ...Object.fromEntries(
-          Object.entries(autoFillData).filter(([key, value]) => value && (!prev[key] || prev[key] === ''))
-        )
-      }));
-    }
-  }, [autoFillData]);
-
   // Save progress automatically when form data changes
   useEffect(() => {
     if (!loading) {
       const saveProgress = async () => {
-        await saveFormProgress('PHDEE02-A', formData, currentStep);
+        await saveFormProgress('PHDEE02-A', formData, 0);
       };
       
       const debounceTimer = setTimeout(saveProgress, 1000);
       return () => clearTimeout(debounceTimer);
     }
-  }, [formData, currentStep, loading]);
+  }, [formData, loading]);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Clear error for this field if it exists
-    if (errors[field]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[field];
-        return newErrors;
-      });
-    }
-  };
-
-  const validateStep = (step) => {
-    const newErrors = {};
-
-    switch (step) {
-      case 0: // Student Information
-        if (!formData.studentName.trim()) newErrors.studentName = 'Full name is required';
-        if (!formData.studentId.trim()) newErrors.studentId = 'Student ID is required';
-        if (!formData.studentEmail.trim()) newErrors.studentEmail = 'Email is required';
-        if (!formData.program) newErrors.program = 'Program selection is required';
-        if (!formData.year) newErrors.year = 'Academic year is required';
-        break;
-
-      case 1: // Supervisor Information
-        if (!formData.supervisorName.trim()) newErrors.supervisorName = 'Supervisor name is required';
-        if (!formData.supervisorEmail.trim()) newErrors.supervisorEmail = 'Supervisor email is required';
-        if (!formData.supervisorTitle.trim()) newErrors.supervisorTitle = 'Supervisor title is required';
-        if (!formData.supervisorDepartment.trim()) newErrors.supervisorDepartment = 'Department is required';
-        break;
-
-      case 2: // Project Details
-        if (!formData.projectTitle.trim()) newErrors.projectTitle = 'Project title is required';
-        if (!formData.projectType) newErrors.projectType = 'Project type is required';
-        if (!formData.estimatedHours) newErrors.estimatedHours = 'Estimated hours is required';
-        if (!formData.startDate) newErrors.startDate = 'Start date is required';
-        if (!formData.endDate) newErrors.endDate = 'End date is required';
-        if (!formData.projectDescription.trim()) newErrors.projectDescription = 'Project description is required';
-        break;
-
-      case 3: // Additional Information
-        if (!formData.agreementTerms) newErrors.agreementTerms = 'You must agree to the terms and conditions';
-        break;
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleNext = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep(prev => Math.min(prev + 1, FORM_STEPS.length - 1));
-    }
-  };
-
-  const handlePrevious = () => {
-    setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
   const handleSubmit = async () => {
-    if (!validateStep(currentStep)) return;
-
     setSubmitting(true);
     try {
       const result = await submitForm('PHDEE02-A', formData);
       if (result.success) {
         console.log('Form submitted successfully');
-        if (onSubmissionComplete) {
-          onSubmissionComplete(result.data);
-        }
+        setShowSuccess(true);
+        setTimeout(() => {
+          setShowSuccess(false);
+          if (onSubmissionComplete) {
+            onSubmissionComplete(result.data);
+          }
+        }, 2000);
       } else {
-        setErrors({ submit: result.message || 'Failed to submit form' });
+        alert(result.message || 'Failed to submit form');
       }
     } catch (error) {
       console.error('Error submitting form:', error);
-      setErrors({ submit: 'Network error during submission' });
+      alert('Network error during submission');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 0: // Student Information
-        return (
-          <div className="form-section">
-            <h3 className="form-section-title">Student Information</h3>
-            
-            <InputField
-              label="Full Name"
-              value={formData.studentName}
-              onChange={(value) => handleInputChange('studentName', value)}
-              placeholder="Enter your full name"
-              required
-              error={errors.studentName}
-              disabled={autoFilledFields.has('studentName')}
-            />
-            
-            <div className="form-grid form-grid-2">
-              <InputField
-                label="Student ID"
-                value={formData.studentId}
-                onChange={(value) => handleInputChange('studentId', value)}
-                placeholder="e.g., S12345678"
-                required
-                error={errors.studentId}
-                disabled={autoFilledFields.has('studentId')}
-              />
-              
-              <InputField
-                label="Email Address"
-                type="email"
-                value={formData.studentEmail}
-                onChange={(value) => handleInputChange('studentEmail', value)}
-                placeholder="your.email@university.edu"
-                required
-                error={errors.studentEmail}
-                disabled={autoFilledFields.has('studentEmail')}
-              />
-            </div>
-            
-            <div className="form-grid form-grid-2">
-              <InputField
-                label="Program/Course"
-                type="select"
-                value={formData.program}
-                onChange={(value) => handleInputChange('program', value)}
-                options={[
-                  'Computer Science',
-                  'Engineering',
-                  'Business Administration',
-                  'Psychology',
-                  'Biology',
-                  'Mathematics',
-                  'Physics',
-                  'Chemistry',
-                  'Other'
-                ]}
-                required
-                error={errors.program}
-              />
-              
-              <InputField
-                label="Academic Year"
-                type="select"
-                value={formData.year}
-                onChange={(value) => handleInputChange('year', value)}
-                options={['1st Year', '2nd Year', '3rd Year', '4th Year', 'Graduate', 'PhD']}
-                required
-                error={errors.year}
-              />
-            </div>
-          </div>
-        );
-
-      case 1: // Supervisor Information
-        return (
-          <div className="form-section">
-            <h3 className="form-section-title">Supervisor Information</h3>
-            
-            <InputField
-              label="Supervisor Name"
-              value={formData.supervisorName}
-              onChange={(value) => handleInputChange('supervisorName', value)}
-              placeholder="Enter supervisor's full name"
-              required
-              error={errors.supervisorName}
-              disabled={autoFilledFields.has('supervisorName')}
-            />
-            
-            <div className="form-grid form-grid-2">
-              <InputField
-                label="Supervisor Email"
-                type="email"
-                value={formData.supervisorEmail}
-                onChange={(value) => handleInputChange('supervisorEmail', value)}
-                placeholder="supervisor@university.edu"
-                required
-                error={errors.supervisorEmail}
-                disabled={autoFilledFields.has('supervisorEmail')}
-              />
-              
-              <InputField
-                label="Title/Position"
-                value={formData.supervisorTitle}
-                onChange={(value) => handleInputChange('supervisorTitle', value)}
-                placeholder="e.g., Professor, Dr., Associate Professor"
-                required
-                error={errors.supervisorTitle}
-                disabled={autoFilledFields.has('supervisorTitle')}
-              />
-            </div>
-            
-            <InputField
-              label="Department/Faculty"
-              value={formData.supervisorDepartment}
-              onChange={(value) => handleInputChange('supervisorDepartment', value)}
-              placeholder="Department or Faculty name"
-              required
-              error={errors.supervisorDepartment}
-              disabled={autoFilledFields.has('supervisorDepartment')}
-            />
-          </div>
-        );
-
-      case 2: // Project Details
-        return (
-          <div className="form-section">
-            <h3 className="form-section-title">Project Details</h3>
-            
-            <InputField
-              label="Project Title"
-              value={formData.projectTitle}
-              onChange={(value) => handleInputChange('projectTitle', value)}
-              placeholder="Enter the project title"
-              required
-              error={errors.projectTitle}
-            />
-            
-            <div className="form-grid form-grid-2">
-              <InputField
-                label="Project Type"
-                type="select"
-                value={formData.projectType}
-                onChange={(value) => handleInputChange('projectType', value)}
-                options={[
-                  'Research Project',
-                  'Thesis',
-                  'Dissertation',
-                  'Independent Study',
-                  'Capstone Project',
-                  'Internship',
-                  'Other'
-                ]}
-                required
-                error={errors.projectType}
-              />
-              
-              <InputField
-                label="Estimated Hours per Week"
-                type="number"
-                value={formData.estimatedHours}
-                onChange={(value) => handleInputChange('estimatedHours', value)}
-                placeholder="e.g., 10"
-                required
-                error={errors.estimatedHours}
-              />
-            </div>
-            
-            <div className="form-grid form-grid-2">
-              <InputField
-                label="Start Date"
-                type="date"
-                value={formData.startDate}
-                onChange={(value) => handleInputChange('startDate', value)}
-                required
-                error={errors.startDate}
-              />
-              
-              <InputField
-                label="End Date"
-                type="date"
-                value={formData.endDate}
-                onChange={(value) => handleInputChange('endDate', value)}
-                required
-                error={errors.endDate}
-              />
-            </div>
-            
-            <InputField
-              label="Project Description"
-              type="textarea"
-              value={formData.projectDescription}
-              onChange={(value) => handleInputChange('projectDescription', value)}
-              placeholder="Provide a detailed description of the project objectives, methodology, and expected outcomes..."
-              required
-              error={errors.projectDescription}
-            />
-          </div>
-        );
-
-      case 3: // Additional Information
-        return (
-          <div className="form-section">
-            <h3 className="form-section-title">Additional Information</h3>
-            
-            <InputField
-              label="Previous Research Experience"
-              type="textarea"
-              value={formData.previousExperience}
-              onChange={(value) => handleInputChange('previousExperience', value)}
-              placeholder="Describe any previous research experience or relevant background..."
-            />
-            
-            <InputField
-              label="Special Requirements or Accommodations"
-              type="textarea"
-              value={formData.specialRequirements}
-              onChange={(value) => handleInputChange('specialRequirements', value)}
-              placeholder="Describe any special requirements, equipment needs, or accommodations..."
-            />
-            
-            <div className="form-field">
-              <h4 style={{ margin: '1.5rem 0 1rem 0', color: 'var(--color-black)' }}>Declarations</h4>
-              
-              <InputField
-                label="I confirm that this research project has received appropriate ethics approval (if required)"
-                type="checkbox"
-                value={formData.ethicsApproval}
-                onChange={(value) => handleInputChange('ethicsApproval', value)}
-              />
-              
-              <InputField
-                label="I understand and agree to comply with data protection and confidentiality requirements"
-                type="checkbox"
-                value={formData.dataProtection}
-                onChange={(value) => handleInputChange('dataProtection', value)}
-              />
-              
-              <InputField
-                label="I agree to the terms and conditions of this research project"
-                type="checkbox"
-                value={formData.agreementTerms}
-                onChange={(value) => handleInputChange('agreementTerms', value)}
-                required
-                error={errors.agreementTerms}
-              />
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
   if (loading) {
     return (
-      <div className="form-container">
-        <div className="form-loading">
-          <div className="form-spinner"></div>
-          <span>Loading form data...</span>
-        </div>
+      <div className="flex flex-col items-center justify-center p-10">
+        <div className="text-blue-600 text-5xl mb-4">⏳</div>
+        <h3 className="text-2xl font-bold mb-2">Loading Form...</h3>
+        <p className="text-lg">Please wait while we load your information.</p>
+      </div>
+    );
+  }
+
+  if (showSuccess) {
+    return (
+      <div className="flex flex-col items-center justify-center p-10">
+        <div className="text-green-600 text-5xl mb-4">✓</div>
+        <h3 className="text-2xl font-bold mb-2">Form Submitted Successfully!</h3>
+        <p className="text-lg">Your Supervisor Consent Form has been submitted for review.</p>
       </div>
     );
   }
 
   return (
-    <div className="form-container">
-      <div className="form-header" style={{ 
-        background: 'linear-gradient(135deg, var(--color-brown) 0%, var(--color-black) 100%)',
-        color: 'white',
-        padding: '2.5rem 3rem',
-        borderRadius: '12px 12px 0 0',
-        marginBottom: '0'
-      }}>
-        <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.5rem' }}>PHDEE02-A Form</h2>
-        <p style={{ margin: 0, opacity: 0.9 }}>
-          Step {currentStep + 1} of {FORM_STEPS.length}: {FORM_STEPS[currentStep].title}
-        </p>
-        <div className="form-step-indicator" style={{ marginTop: '1rem', color: 'rgba(255,255,255,0.8)' }}>
-          <span>{FORM_STEPS[currentStep].description}</span>
-        </div>
+    <div className="max-w-4xl mx-auto p-6 bg-white relative">
+      {/* Header */}
+      <div className="relative text-center mb-6">
+        {/* Close Button */}
+        {onClose && (
+          <button
+            className="absolute left-0 top-0 m-2 text-2xl text-gray-500 hover:text-black focus:outline-none"
+            onClick={onClose}
+            aria-label="Close"
+            type="button"
+          >
+            ×
+          </button>
+        )}
+        {/* ITU Logo Placeholder */}
+        <div className="logo-placeholder"></div>
+        <h1 className="text-lg font-bold mb-2">INFORMATION TECHNOLOGY UNIVERSITY OF THE PUNJAB</h1>
+        <h2 className="text-base font-bold">SUPERVISOR CONSENT FORM</h2>
       </div>
 
-      <div style={{ background: 'white', padding: '2.5rem 3rem', borderRadius: '0 0 12px 12px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
-        {renderStepContent()}
-
-        {errors.submit && (
-          <div className="error-message" style={{ marginTop: '1rem' }}>
-            <span>{errors.submit}</span>
+      {/* Student Information */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4 text-center">STUDENT INFORMATION</h3>
+        
+        <div className="flex gap-4 mb-4">
+          <div className="flex-1">
+            <label className="inline-block w-24">Student ID:</label>
+            <input
+              type="text"
+              value={formData.studentId}
+              readOnly
+              disabled
+              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+            />
           </div>
-        )}
-
-        <div className="form-step-navigation">
-          <div>
-            {currentStep > 0 && (
-              <button 
-                type="button" 
-                onClick={handlePrevious}
-                className="form-button form-button-secondary"
-              >
-                Previous
-              </button>
-            )}
+          <div className="flex-1">
+            <label className="inline-block w-20">Session:</label>
+            <input
+              type="text"
+              value={formData.academicYear}
+              readOnly
+              disabled
+              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+            />
           </div>
-
-          <div className="form-step-indicator">
-            <span>Page {currentStep + 1} of {FORM_STEPS.length}</span>
-          </div>
-
-          <div>
-            {currentStep < FORM_STEPS.length - 1 ? (
-              <button 
-                type="button" 
-                onClick={handleNext}
-                className="form-button form-button-primary"
-              >
-                Next
-              </button>
-            ) : (
-              <button 
-                type="button" 
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="form-button form-button-primary"
-              >
-                {submitting ? 'Submitting...' : 'Submit Form'}
-              </button>
-            )}
+          <div className="flex-1">
+            <label className="inline-block w-20">Semester:</label>
+            <input
+              type="text"
+              value={formData.currentSemester}
+              readOnly
+              disabled
+              className="border-b border-black inline-block w-32 focus:outline-none bg-gray-100 cursor-not-allowed"
+            />
           </div>
         </div>
 
-        {autoFilledFields.size > 0 && (
-          <div style={{ 
-            marginTop: '1rem', 
-            padding: '0.75rem', 
-            background: 'rgba(40, 167, 69, 0.1)', 
-            borderRadius: '6px',
-            fontSize: '0.875rem',
-            color: 'var(--color-success)'
-          }}>
-            ✓ {autoFilledFields.size} field(s) auto-filled from your profile
-          </div>
-        )}
+        <div className="mb-4">
+          <label className="inline-block w-32">Student Name:</label>
+          <input
+            type="text"
+            value={formData.studentName}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Student Email:</label>
+          <input
+            type="email"
+            value={formData.studentEmail}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Department:</label>
+          <input
+            type="text"
+            value={formData.department}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Research Area:</label>
+          <input
+            type="text"
+            value={formData.researchArea}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
       </div>
+
+      {/* Supervisor Information */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4 text-center">SUPERVISOR INFORMATION</h3>
+        
+        <div className="mb-4">
+          <label className="inline-block w-32">Supervisor Name:</label>
+          <input
+            type="text"
+            value={formData.supervisorName}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Supervisor Email:</label>
+          <input
+            type="email"
+            value={formData.supervisorEmail}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Designation:</label>
+          <input
+            type="text"
+            value={formData.supervisorDesignation}
+            readOnly
+            disabled
+            className="border-b border-black inline-block w-96 focus:outline-none bg-gray-100 cursor-not-allowed"
+          />
+        </div>
+      </div>
+
+      {/* Research Details */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4 text-center">RESEARCH PROJECT DETAILS</h3>
+        
+        <div className="mb-4">
+          <label className="inline-block w-32">Research Topic:</label>
+          <input
+            type="text"
+            value={formData.researchTopic}
+            onChange={(e) => handleInputChange('researchTopic', e.target.value)}
+            className="border-b border-black inline-block w-96 focus:outline-none"
+            placeholder="Enter your research topic"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Research Objectives:</label>
+          <textarea
+            value={formData.researchObjectives}
+            onChange={(e) => handleInputChange('researchObjectives', e.target.value)}
+            className="border border-black w-full h-20 p-2 focus:outline-none mt-2"
+            placeholder="Describe the main objectives of your research"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Methodology:</label>
+          <textarea
+            value={formData.methodology}
+            onChange={(e) => handleInputChange('methodology', e.target.value)}
+            className="border border-black w-full h-20 p-2 focus:outline-none mt-2"
+            placeholder="Describe the methodology you plan to use"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Expected Outcomes:</label>
+          <textarea
+            value={formData.expectedOutcomes}
+            onChange={(e) => handleInputChange('expectedOutcomes', e.target.value)}
+            className="border border-black w-full h-20 p-2 focus:outline-none mt-2"
+            placeholder="Describe the expected outcomes of your research"
+          />
+        </div>
+      </div>
+
+      {/* Horizontal Line */}
+      <div className="border-t-2 border-black my-6"></div>
+
+      {/* Consent Section */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4 text-center">CONSENT AND AGREEMENT</h3>
+        
+        <div className="mb-4">
+          <label className="inline-block w-32">Consent Date:</label>
+          <input
+            type="date"
+            value={formData.consentDate}
+            onChange={(e) => handleInputChange('consentDate', e.target.value)}
+            className="border-b border-black inline-block w-48 focus:outline-none"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="inline-block w-32">Comments:</label>
+          <textarea
+            value={formData.comments}
+            onChange={(e) => handleInputChange('comments', e.target.value)}
+            className="border border-black w-full h-16 p-2 focus:outline-none mt-2"
+            placeholder="Any additional comments or special conditions"
+          />
+        </div>
+
+        <div className="mb-6">
+          <label className="inline-block w-48">Student Signature with date:</label>
+          <input
+            type="text"
+            value={formData.studentSignature}
+            onChange={(e) => handleInputChange('studentSignature', e.target.value)}
+            className="border-b border-black inline-block w-80 focus:outline-none"
+            placeholder="Student signature and date"
+          />
+        </div>
+      </div>
+
+      {/* Horizontal Line */}
+      <div className="border-t-2 border-black my-6"></div>
+
+      {/* Official Use Only */}
+      <div className="mb-6">
+        <h3 className="font-bold mb-4">(FOR OFFICIAL USE ONLY)</h3>
+        
+        <div className="grid grid-cols-2 gap-8">
+          <div>
+            <div className="mb-6">
+              <div className="mb-2">Student Agreement</div>
+              <div className="text-sm">(Check if student agrees to terms)</div>
+              <label className="flex items-center mt-2">
+                <input
+                  type="checkbox"
+                  checked={formData.studentAgreement}
+                  onChange={(e) => handleInputChange('studentAgreement', e.target.checked)}
+                  className="mr-2"
+                />
+                I agree to the terms and conditions of supervision
+              </label>
+            </div>
+
+            <div className="mb-6">
+              <div className="mb-2">Terms Accepted</div>
+              <div className="text-sm">(Check if terms are accepted)</div>
+              <label className="flex items-center mt-2">
+                <input
+                  type="checkbox"
+                  checked={formData.termsAccepted}
+                  onChange={(e) => handleInputChange('termsAccepted', e.target.checked)}
+                  className="mr-2"
+                />
+                I accept all terms and conditions
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-6">
+              <div className="mb-2">Supervisor Consent</div>
+              <div className="text-sm">(Check if supervisor consents)</div>
+              <label className="flex items-center mt-2">
+                <input
+                  type="checkbox"
+                  checked={formData.primarySupervisorConsent}
+                  onChange={(e) => handleInputChange('primarySupervisorConsent', e.target.checked)}
+                  className="mr-2"
+                />
+                I consent to supervise this student
+              </label>
+            </div>
+
+            <div className="mb-6">
+              <div className="mb-2">Supervisor</div>
+              <div className="text-sm">Supervisor's Signature with date:</div>
+              <input
+                type="text"
+                value={formData.supervisorSignature}
+                onChange={(e) => handleInputChange('supervisorSignature', e.target.value)}
+                className="border-b border-black w-full focus:outline-none mt-2"
+                placeholder="Supervisor signature and date"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Form Footer */}
+      <div className="flex justify-end items-center mt-8 gap-4">
+        {onClose && (
+          <button
+            type="button"
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+        )}
+        <button
+          type="button"
+          className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleSubmit}
+          disabled={submitting}
+        >
+          {submitting ? 'Submitting...' : 'Submit Form'}
+        </button>
+      </div>
+      
+      <div className="text-right text-sm mt-4">
+        <strong>PHDEE02-A Form</strong>
+      </div>
+
+      {autoFilledFields.size > 0 && (
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+          ✓ {autoFilledFields.size} field(s) auto-filled from your profile
+        </div>
+      )}
     </div>
   );
 };

@@ -392,6 +392,16 @@ export const getFacultyPendingApprovals = async (facultyId) => {
   return await apiRequest(`/faculty/${facultyId}/pending-approvals`);
 };
 
+// Get supervisor pending approvals (for supervisor consent forms)
+export const getSupervisorPendingApprovals = async () => {
+  return apiRequest(`/forms/supervisor/pending-approvals`);
+};
+
+// Get auto-fill data for forms from backend
+export const getFormAutoFillData = async (formCode) => {
+  return apiRequest(`/forms/auto-fill/${formCode}`);
+};
+
 // Get comprehensive exams
 export const getComprehensiveExams = async () => {
   return await apiRequest('/admin/exams');
@@ -780,6 +790,58 @@ export const updateDPRC = async (dprcId, dprcData) => {
 export const getAvailableFaculty = async (departmentId = null) => {
   const query = departmentId ? `?department_id=${departmentId}` : '';
   return apiRequest(`/admin/faculty/available${query}`);
+};
+
+// Update DPRC for existing department
+export const updateDepartmentDPRC = async (departmentId, dprcData) => {
+  return apiRequest(`/admin/departments/${departmentId}/dprc`, {
+    method: 'PUT',
+    body: JSON.stringify(dprcData)
+  });
+};
+
+// ==================== FACULTY DASHBOARD APIs ====================
+
+// Get faculty dashboard data
+export const getFacultyDashboard = async () => {
+  return apiRequest('/faculty/dashboard');
+};
+
+// Get students supervised by faculty member
+export const getFacultyStudents = async () => {
+  return apiRequest('/faculty/my-students');
+};
+
+// Create faculty user accounts (Admin only)
+export const createFacultyUserAccounts = async () => {
+  return apiRequest('/admin/faculty/create-user-accounts', {
+    method: 'POST'
+  });
+};
+
+// Get faculty user status (Admin only) 
+export const getFacultyUserStatus = async () => {
+  return apiRequest('/admin/faculty/user-status');
+};
+
+// ==================== DPRC FACULTY DASHBOARD APIs ====================
+
+// Get DPRC dashboard data
+export const getDPRCDashboard = async () => {
+  return apiRequest('/faculty/dprc/dashboard');
+};
+
+// Process DPRC approval
+export const processDPRCApproval = async (submissionId, action, comments = '') => {
+  return apiRequest(`/faculty/dprc/forms/${submissionId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ action, comments })
+  });
+};
+
+// Get DPRC form details
+export const getDPRCFormDetails = async (submissionId) => {
+  return apiRequest(`/faculty/dprc/forms/${submissionId}`);
 };
 
 // Add new department (Admin only)

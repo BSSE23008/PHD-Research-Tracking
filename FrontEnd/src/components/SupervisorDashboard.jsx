@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   getFormSubmissions,
-  getFacultyPendingApprovals,
+  getSupervisorPendingApprovals,
   approveFormSubmission,
   getAllStudents,
   getNotifications,
@@ -44,7 +44,7 @@ const SupervisorDashboard = ({ user }) => {
     try {
       const [formsResult, pendingApprovalsResult, studentsResult, notificationsResult] = await Promise.all([
         getFormSubmissions({ supervisor_id: user.id }),
-        getFacultyPendingApprovals(user.id),
+        getSupervisorPendingApprovals(),
         getAllStudents({ supervisor_id: user.id }),
         getNotifications({ page: 1, limit: 10 })
       ]);
@@ -53,17 +53,17 @@ const SupervisorDashboard = ({ user }) => {
         const submissions = formsResult.data.submissions || [];
         setAllSubmissions(submissions);
         
-        // Use faculty pending approvals for more accurate data
+        // Use supervisor pending approvals for consent forms
         if (pendingApprovalsResult.success) {
-          setPendingForms(pendingApprovalsResult.data.filter(a => a.approval_stage === 'supervisor'));
+          setPendingForms(pendingApprovalsResult.data.pendingApprovals || []);
         } else {
-          setPendingForms(submissions.filter(s => s.supervisor_approval_status === 'pending'));
+          setPendingForms(submissions.filter(s => s.status === 'awaiting_supervisor_consent'));
         }
         
         // Calculate stats
         const pendingCount = pendingApprovalsResult.success ? 
-          pendingApprovalsResult.data.filter(a => a.approval_stage === 'supervisor').length : 
-          submissions.filter(s => s.supervisor_approval_status === 'pending').length;
+          (pendingApprovalsResult.data.pendingApprovals || []).length : 
+          submissions.filter(s => s.status === 'awaiting_supervisor_consent').length;
           
         setStats({
           totalStudents: studentsResult.success ? studentsResult.data.students?.length || 0 : 0,

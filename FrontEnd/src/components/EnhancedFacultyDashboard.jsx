@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
   getFacultyPendingApprovals,
-  getAllStudents,
+  getFacultyStudents,
   getFormSubmissions,
   approveFormSubmission,
   getAllGECCommittees,
   getFormSubmissionDetails,
+  getDPRCDashboard,
   formatDate,
   getStatusColor
 } from '../utils/api';
 import FormViewer from './FormViewer';
+import FacultyDPRCDashboard from './FacultyDPRCDashboard';
 
 const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
   const [loading, setLoading] = useState(true);
@@ -21,7 +23,9 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
     myStudents: [],
     recentSubmissions: [],
     gecCommittees: [],
-    facultyStats: {}
+    facultyStats: {},
+    isDPRCMember: false,
+    dprcData: null
   });
 
   useEffect(() => {
@@ -31,6 +35,15 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
   const loadDashboardData = async () => {
     setLoading(true);
     try {
+      // Check if faculty is DPRC member
+      let dprcResult = null;
+      try {
+        dprcResult = await getDPRCDashboard();
+      } catch {
+        // Not a DPRC member, which is fine
+        console.log('Faculty is not a DPRC member');
+      }
+
       const [
         approvalsResult,
         studentsResult,
@@ -38,7 +51,7 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
         gecResult
       ] = await Promise.all([
         getFacultyPendingApprovals(user.id),
-        getAllStudents({ supervisor_id: user.id }),
+        getFacultyStudents(),
         getFormSubmissions({ user_type: 'faculty' }),
         user.roles?.includes('gec_member') ? getAllGECCommittees() : Promise.resolve({ success: true, data: [] })
       ]);
@@ -48,6 +61,8 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
         myStudents: studentsResult.success ? studentsResult.data : [],
         recentSubmissions: submissionsResult.success ? submissionsResult.data.submissions || [] : [],
         gecCommittees: gecResult.success ? gecResult.data : [],
+        isDPRCMember: dprcResult?.success || false,
+        dprcData: dprcResult?.success ? dprcResult.data : null,
         facultyStats: calculateStats(studentsResult.data || [], approvalsResult.data || [])
       });
     } catch (error) {
@@ -237,12 +252,6 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
         <h2 className="text-2xl font-bold">My Students</h2>
         <div className="space-x-2">
           <button
-            onClick={() => onNavigate('admin')}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-          >
-            Add Student
-          </button>
-          <button
             onClick={loadDashboardData}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
@@ -377,6 +386,7 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
               { id: 'overview', name: 'Overview', icon: '📊' },
               { id: 'approvals', name: 'Approvals', icon: '✓', count: dashboardData.pendingApprovals.length },
               { id: 'students', name: 'Students', icon: '👨‍🎓', count: dashboardData.myStudents.length },
+              ...(dashboardData.isDPRCMember ? [{ id: 'dprc', name: 'DPRC', icon: '🏛️', count: dashboardData.dprcData?.pending_forms?.length || 0 }] : []),
               { id: 'gec', name: 'GEC', icon: '👥' },
               { id: 'reports', name: 'Reports', icon: '📈' }
             ].map(tab => (
@@ -407,6 +417,9 @@ const EnhancedFacultyDashboard = ({ user, onNavigate }) => {
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'approvals' && renderApprovals()}
         {activeTab === 'students' && renderStudents()}
+        {activeTab === 'dprc' && dashboardData.isDPRCMember && (
+          <FacultyDPRCDashboard />
+        )}
         {activeTab === 'gec' && renderGEC()}
         {activeTab === 'reports' && (
           <div className="bg-white rounded-lg shadow p-8 text-center">
@@ -473,7 +486,7 @@ const ApprovalCard = ({ approval, onApprove, onReject, onViewDetails }) => {
             Submitted by: {approval.student_name} ({approval.student_id})
           </p>
           <p className="text-sm text-gray-500">
-            {formatDate(approval.submitted_at)} • Stage: {approval.approval_stage}
+            {formatDate(approval.submitted_at)} • Stage: {approval.approval_stage === 'supervisor_consent' ? 'Supervisor Consent' : approval.approval_stage}
           </p>
         </div>
         <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(approval.status)}`}>

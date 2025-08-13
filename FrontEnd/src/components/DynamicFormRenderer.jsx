@@ -232,7 +232,8 @@ const DynamicFormRenderer = ({ user, selectedFormCode, onNavigate }) => {
       // Check if form is available for current stage
       const stageMatch = metadata.stage === userStage || 
                         (userStage === 'admission' && metadata.stage === 'supervision_consent') ||
-                        (userStage === 'supervision_consent' && metadata.stage === 'gec_formation');
+                        (userStage === 'supervision_consent' && metadata.stage === 'gec_formation') ||
+                        (userStage === 'gec_formation' && metadata.stage === 'gec_formation');
 
       // Check if form was already submitted
       const alreadySubmitted = submissions.some(sub => 
@@ -242,10 +243,19 @@ const DynamicFormRenderer = ({ user, selectedFormCode, onNavigate }) => {
       // Special logic for different forms
       let isAvailable = false;
       
-      if (formCode === 'SupervisorConsent' && !user?.primary_supervisor_id) {
-        isAvailable = true; // Always available if no supervisor assigned
+      // Check if Initial Onboarding Form is approved
+      const onboardingApproved = submissions.some(sub => 
+        sub.form_code === 'ONBOARDING-001' && 
+        (sub.status === 'approved_by_dprc' || sub.status === 'approved')
+      );
+      
+      if (formCode === 'PHDEE02-A') {
+        // Supervisor Consent Form is available after Initial Onboarding Form is approved
+        isAvailable = onboardingApproved && !alreadySubmitted;
       } else if (formCode === 'PHDEE02-C' && !gecCommittee) {
-        isAvailable = semesterMatch; // Available if no GEC committee formed
+        isAvailable = semesterMatch && user?.primary_supervisor_id; // Available if supervisor assigned but no GEC committee formed
+      } else if (metadata.stage === 'gec_formation' && user?.primary_supervisor_id) {
+        isAvailable = semesterMatch && !alreadySubmitted; // GEC forms available after supervisor assignment
       } else if (semesterMatch && (stageMatch || metadata.required)) {
         isAvailable = !alreadySubmitted;
       }
@@ -261,7 +271,7 @@ const DynamicFormRenderer = ({ user, selectedFormCode, onNavigate }) => {
               submissionStatus: getFormSubmissionStatus(formCode)
             });
           }
-        } catch (error) {
+        } catch {
           // If check fails, assume available
           available.push({
             code: formCode,

@@ -7,8 +7,7 @@ import {
   deleteDepartment,
   getAllDPRCs,
   createDPRC,
-  updateDPRC,
-  getDPRCDetails,
+  updateDepartmentDPRC,
   getAvailableFaculty,
   getAllFaculty
 } from '../utils/api';
@@ -31,15 +30,21 @@ const DepartmentManagement = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      console.log('Loading department data...');
       const [deptResult, dprcResult, facultyResult] = await Promise.all([
         getAllDepartments(),
         getAllDPRCs(),
         getAllFaculty()
       ]);
 
+      console.log('Department result:', deptResult);
+      console.log('DPRC result:', dprcResult);
+
       setDepartments(deptResult.success ? deptResult.data : []);
       setDprcs(dprcResult.success ? dprcResult.data : []);
       setFaculty(facultyResult.success ? facultyResult.data : []);
+      
+      console.log('Data loaded successfully');
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -97,17 +102,31 @@ const DepartmentManagement = () => {
 
   const handleCreateDPRC = async (dprcData) => {
     try {
-      const result = await createDPRC(dprcData);
+      let result;
+      if (selectedDepartment && selectedDepartment.id) {
+        // Update DPRC for existing department
+        console.log('Updating DPRC for department:', selectedDepartment.id, dprcData);
+        result = await updateDepartmentDPRC(selectedDepartment.id, dprcData);
+      } else {
+        // Create new DPRC (for new department)
+        console.log('Creating new DPRC:', dprcData);
+        result = await createDPRC(dprcData);
+      }
+      
       if (result.success) {
-        alert('DPRC created successfully!');
-        loadData();
+        alert('DPRC saved successfully!');
+        console.log('DPRC operation successful, reloading data...');
+        await loadData(); // Wait for data to reload
         setShowDPRCModal(false);
         setSelectedDPRC(null);
+        setSelectedDepartment(null); // Clear selected department
       } else {
         alert(`Error: ${result.message}`);
+        console.error('DPRC operation failed:', result);
       }
     } catch (error) {
-      alert('Error creating DPRC: ' + error.message);
+      console.error('Error saving DPRC:', error);
+      alert('Error saving DPRC: ' + error.message);
     }
   };
 
@@ -141,13 +160,13 @@ const DepartmentManagement = () => {
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-2xl font-bold text-orange-600">
-            {departments.filter(d => d.can_form_dprc && !d.has_dprc).length}
+            {departments.filter(d => d.total_faculty >= 4 && !d.has_dprc).length}
           </div>
           <div className="text-sm text-gray-600">Can Form DPRC</div>
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-2xl font-bold text-red-600">
-            {departments.filter(d => !d.can_form_dprc).length}
+            {departments.filter(d => d.total_faculty < 4).length}
           </div>
           <div className="text-sm text-gray-600">Need More Faculty</div>
         </div>
@@ -197,13 +216,13 @@ const DepartmentManagement = () => {
                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
                       ✅ DPRC Formed
                     </span>
-                  ) : dept.can_form_dprc ? (
+                  ) : dept.total_faculty >= 4 ? (
                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
                       ⏳ Can Form DPRC
                     </span>
                   ) : (
                     <span className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                      ❌ Need More Faculty
+                      ❌ Need {4 - dept.total_faculty} More Faculty
                     </span>
                   )}
                 </td>
@@ -217,31 +236,28 @@ const DepartmentManagement = () => {
                   >
                     Edit
                   </button>
-                  {!dept.has_dprc && dept.can_form_dprc && (
+                  {dept.total_faculty >= 4 ? (
                     <button
                       onClick={() => {
                         setSelectedDepartment(dept);
+                        if (dept.has_dprc) {
+                          // Edit existing DPRC
+                          const dprc = dprcs.find(d => d.department_id === dept.id);
+                          setSelectedDPRC(dprc);
+                        } else {
+                          // Form new DPRC
+                          setSelectedDPRC(null);
+                        }
                         setShowDPRCModal(true);
                       }}
-                      className="text-green-600 hover:text-green-900"
+                      className={dept.has_dprc ? "text-purple-600 hover:text-purple-900" : "text-green-600 hover:text-green-900"}
                     >
-                      Form DPRC
+                      {dept.has_dprc ? 'Edit DPRC' : 'Form DPRC'}
                     </button>
-                  )}
-                  {dept.has_dprc && (
-                    <button
-                      onClick={() => {
-                        // View DPRC details
-                        const dprc = dprcs.find(d => d.department_id === dept.id);
-                        if (dprc) {
-                          setSelectedDPRC(dprc);
-                          setShowDPRCModal(true);
-                        }
-                      }}
-                      className="text-purple-600 hover:text-purple-900"
-                    >
-                      View DPRC
-                    </button>
+                  ) : (
+                    <span className="text-gray-400 text-sm">
+                      Need {4 - dept.total_faculty} more faculty for DPRC
+                    </span>
                   )}
                   <button
                     onClick={() => handleDeleteDepartment(dept.id)}
@@ -281,7 +297,7 @@ const DepartmentManagement = () => {
         </div>
         <div className="bg-white rounded-lg shadow p-6">
           <div className="text-2xl font-bold text-orange-600">
-            {departments.filter(d => d.can_form_dprc && !d.has_dprc).length}
+            {departments.filter(d => d.total_faculty >= 4 && !d.has_dprc).length}
           </div>
           <div className="text-sm text-gray-600">Pending Formation</div>
         </div>
@@ -432,7 +448,6 @@ const DepartmentManagement = () => {
         <DPRCModal
           dprc={selectedDPRC}
           department={selectedDepartment}
-          faculty={faculty}
           onClose={() => {
             setShowDPRCModal(false);
             setSelectedDPRC(null);
@@ -461,6 +476,26 @@ const DepartmentModal = ({ department, faculty, onClose, onSave }) => {
   });
 
   const [selectedFaculty, setSelectedFaculty] = useState([]);
+  const [departmentDetails, setDepartmentDetails] = useState(null);
+  const isEditMode = !!department;
+
+  useEffect(() => {
+    if (department && department.id) {
+      loadDepartmentDetails();
+    }
+  }, [department]);
+
+  const loadDepartmentDetails = async () => {
+    try {
+      const result = await getDepartmentDetails(department.id);
+      if (result.success) {
+        setDepartmentDetails(result.data);
+        setSelectedFaculty(result.data.faculty_members || []);
+      }
+    } catch (error) {
+      console.error('Error loading department details:', error);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -470,9 +505,16 @@ const DepartmentModal = ({ department, faculty, onClose, onSave }) => {
       return;
     }
 
-    if (!department && selectedFaculty.length < 4) {
-      alert('At least 4 faculty members are required for a new department!');
-      return;
+    // Warning for departments with less than 4 faculty but still allow creation
+    if (selectedFaculty.length < 4) {
+      const confirmed = window.confirm(
+        `This department has only ${selectedFaculty.length} faculty members. ` +
+        'A minimum of 4 faculty members is required to form a DPRC committee. ' +
+        'You can add more faculty members later. Continue?'
+      );
+      if (!confirmed) {
+        return;
+      }
     }
 
     onSave({
@@ -530,37 +572,72 @@ const DepartmentModal = ({ department, faculty, onClose, onSave }) => {
             />
           </div>
 
-          {!department && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Assign Faculty Members (Minimum 4 required)
-              </label>
-              <div className="max-h-48 overflow-y-auto border border-gray-300 rounded p-3">
-                {faculty.map(f => (
-                  <label key={f.id} className="flex items-center space-x-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={selectedFaculty.some(sf => sf.id === f.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedFaculty([...selectedFaculty, f]);
-                        } else {
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {isEditMode ? 'Manage Faculty Members' : 'Assign Faculty Members'} (Minimum 4 required)
+            </label>
+            
+            {isEditMode && departmentDetails && (
+              <div className="mb-4">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Current Faculty Members:</h4>
+                <div className="max-h-32 overflow-y-auto border border-gray-200 rounded p-2 bg-gray-50">
+                  {selectedFaculty.map(f => (
+                    <div key={f.id} className="flex items-center justify-between py-1">
+                      <span className="text-sm">
+                        {f.first_name} {f.last_name} - {f.designation}
+                        {f.is_dprc_chair && <span className="text-blue-600 font-medium"> (DPRC Chair)</span>}
+                        {f.dprc_role === 'member' && <span className="text-green-600"> (DPRC Member)</span>}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedFaculty.length <= 4) {
+                            alert('Cannot remove faculty. Minimum 4 faculty members required.');
+                            return;
+                          }
                           setSelectedFaculty(selectedFaculty.filter(sf => sf.id !== f.id));
-                        }
-                      }}
-                      className="rounded"
-                    />
-                    <span className="text-sm">
-                      {f.first_name} {f.last_name} - {f.designation}
-                    </span>
-                  </label>
-                ))}
+                        }}
+                        className="text-red-600 hover:text-red-800 text-xs"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <p className="text-sm text-gray-500 mt-1">
-                Selected: {selectedFaculty.length} faculty members
-              </p>
+            )}
+
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                {isEditMode ? 'Add More Faculty:' : 'Select Faculty:'}
+              </h4>
+              <div className="max-h-48 overflow-y-auto border border-gray-300 rounded p-3">
+                {faculty
+                  .filter(f => !selectedFaculty.some(sf => sf.id === f.id))
+                  .map(f => (
+                    <label key={f.id} className="flex items-center space-x-2 py-1">
+                      <input
+                        type="checkbox"
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedFaculty([...selectedFaculty, f]);
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm">
+                        {f.first_name} {f.last_name} - {f.designation}
+                      </span>
+                    </label>
+                  ))}
+              </div>
             </div>
-          )}
+            
+            <p className="text-sm text-gray-500 mt-1">
+              Selected: {selectedFaculty.length} faculty members
+              {selectedFaculty.length < 4 && <span className="text-red-500"> (Minimum 4 required)</span>}
+            </p>
+          </div>
 
           <div className="flex justify-end space-x-3 pt-6">
             <button
@@ -584,7 +661,7 @@ const DepartmentModal = ({ department, faculty, onClose, onSave }) => {
 };
 
 // DPRC Modal Component
-const DPRCModal = ({ dprc, department, faculty, onClose, onSave }) => {
+const DPRCModal = ({ dprc, department, onClose, onSave }) => {
   const [formData, setFormData] = useState({
     department_id: department?.id || dprc?.department_id || '',
     committee_name: dprc?.committee_name || `${department?.dept_name || ''} DPRC`,

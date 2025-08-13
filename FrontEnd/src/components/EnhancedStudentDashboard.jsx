@@ -46,44 +46,62 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
         setUserProfile(profileResult.data.user);
       }
 
-      // Load all dashboard data in parallel
+      // Load all dashboard data in parallel with error handling
       const [
         summaryResult,
         submissionsResult, 
         gecResult,
         changeRequestsResult,
         workflowResult
-      ] = await Promise.all([
+      ] = await Promise.allSettled([
         getDashboardSummary(),
         getFormSubmissions({ limit: 10 }),
-        getMyGECCommittee(),
-        getMyGECChangeRequests(),
-        getCurrentWorkflowStage()
+        getMyGECCommittee().catch(err => ({ success: false, error: err.message })),
+        getMyGECChangeRequests().catch(err => ({ success: false, error: err.message })),
+        getCurrentWorkflowStage().catch(err => ({ success: false, error: err.message }))
       ]);
 
       // Process dashboard summary
-      if (summaryResult.success) {
+      if (summaryResult.status === 'fulfilled' && summaryResult.value.success) {
+        const data = summaryResult.value.data;
+        console.log('Dashboard summary data:', data); // Debug log
+        
         setDashboardData(prev => ({
           ...prev,
-          ...summaryResult.data,
-          currentSemester: userProfile?.current_semester || user?.current_semester || '1st',
-          workflowStage: workflowResult.success ? workflowResult.data.stage : 'supervision_consent'
+          ...data,
+          currentSemester: data.user?.current_semester || userProfile?.current_semester || user?.current_semester || '1st',
+          workflowStage: (workflowResult.status === 'fulfilled' && workflowResult.value.success) ? workflowResult.value.data.stage : 'supervision_consent',
+          pendingForms: data.pendingForms || [],
+          recentSubmissions: data.recentSubmissions || [],
+          totalFormsSubmitted: data.totalFormsSubmitted || 0,
+          unreadNotifications: data.unreadNotifications || 0
         }));
+        
+        // Update user profile with the latest data from backend
+        if (data.user) {
+          setUserProfile(data.user);
+        }
       }
 
       // Process form submissions
-      if (submissionsResult.success) {
-        setFormSubmissions(submissionsResult.data.submissions || []);
+      if (submissionsResult.status === 'fulfilled' && submissionsResult.value.success) {
+        setFormSubmissions(submissionsResult.value.data.submissions || []);
       }
 
-      // Process GEC committee
-      if (gecResult.success && gecResult.data) {
-        setGecCommittee(gecResult.data);
+      // Process GEC committee (handle 403 errors gracefully)
+      if (gecResult.status === 'fulfilled' && gecResult.value.success && gecResult.value.data) {
+        setGecCommittee(gecResult.value.data);
+      } else if (gecResult.status === 'fulfilled' && !gecResult.value.success) {
+        console.log('GEC committee not available:', gecResult.value.error);
+        setGecCommittee(null);
       }
 
-      // Process change requests
-      if (changeRequestsResult.success) {
-        setChangeRequests(changeRequestsResult.data || []);
+      // Process change requests (handle 403 errors gracefully)
+      if (changeRequestsResult.status === 'fulfilled' && changeRequestsResult.value.success) {
+        setChangeRequests(changeRequestsResult.value.data || []);
+      } else if (changeRequestsResult.status === 'fulfilled' && !changeRequestsResult.value.success) {
+        console.log('GEC change requests not available:', changeRequestsResult.value.error);
+        setChangeRequests([]);
       }
 
     } catch (error) {
@@ -134,6 +152,24 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-4xl mb-4">⚠️</div>
+          <p className="text-lg text-gray-900 mb-2">Failed to load dashboard</p>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={loadAllDashboardData}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -150,7 +186,7 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
                 </span>
                 <span className="text-gray-400">•</span>
                 <span className="text-gray-600">
-                  <span className="font-medium">Department:</span> {userProfile?.department || 'Computer Science'}
+                  <span className="font-medium">Department:</span> {userProfile?.dept_name || userProfile?.department || 'Not assigned'}
                 </span>
                 <span className="text-gray-400">•</span>
                 <span className="text-gray-600">
@@ -162,11 +198,21 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
                 </span>
               </div>
             </div>
-            {dashboardData.unreadNotifications > 0 && (
-              <div className="bg-red-100 text-red-800 px-4 py-2 rounded-lg">
-                <span className="font-medium">{dashboardData.unreadNotifications}</span> new notifications
-              </div>
-            )}
+            <div className="flex items-center space-x-4">
+              {dashboardData.unreadNotifications > 0 && (
+                <div className="bg-red-100 text-red-800 px-4 py-2 rounded-lg">
+                  <span className="font-medium">{dashboardData.unreadNotifications}</span> new notifications
+                </div>
+              )}
+              <button
+                onClick={loadAllDashboardData}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                disabled={loading}
+              >
+                <span>🔄</span>
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -191,7 +237,10 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
           />
           <StatCard
             title="Approved Forms"
-            value={formSubmissions.filter(f => f.status === 'approved').length}
+            value={formSubmissions.filter(f => 
+              f.status === 'approved' || 
+              f.final_approval_status === 'approved'
+            ).length}
             description="Successfully approved"
             color="green"
             icon="✅"
@@ -246,6 +295,7 @@ const EnhancedStudentDashboard = ({ user, onNavigate, onFormSelect }) => {
                 user={userProfile || user}
                 dashboardData={dashboardData}
                 recentSubmissions={formSubmissions.slice(0, 5)}
+                gecCommittee={gecCommittee}
                 onFormSelect={handleFormNavigation}
               />
             )}
@@ -306,7 +356,7 @@ const StatCard = ({ title, value, description, color, icon, onClick }) => (
   </div>
 );
 
-const OverviewTab = ({ user, dashboardData, recentSubmissions, onFormSelect }) => (
+const OverviewTab = ({ user, dashboardData, recentSubmissions, gecCommittee, onFormSelect }) => (
   <div className="space-y-6">
     {/* Student Information Card */}
     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg border border-blue-200">
@@ -322,7 +372,7 @@ const OverviewTab = ({ user, dashboardData, recentSubmissions, onFormSelect }) =
         </div>
         <div>
           <p className="text-sm font-medium text-gray-600">Department</p>
-          <p className="text-lg text-gray-900">{user?.department || 'Computer Science'}</p>
+          <p className="text-lg text-gray-900">{user?.dept_name || user?.department || 'Not assigned'}</p>
         </div>
         <div>
           <p className="text-sm font-medium text-gray-600">Current Semester</p>
@@ -394,8 +444,24 @@ const OverviewTab = ({ user, dashboardData, recentSubmissions, onFormSelect }) =
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="space-y-3">
             <ProgressItem label="Admission" completed={true} />
-            <ProgressItem label="Supervision Assignment" completed={!!user?.primary_supervisor_id} />
-            <ProgressItem label="GEC Formation" completed={!!dashboardData.gecCommittee} />
+            <ProgressItem 
+              label="Initial Onboarding" 
+              completed={dashboardData.recentSubmissions?.some(sub => 
+                sub.form_code === 'ONBOARDING-001' && 
+                (sub.status === 'approved_by_dprc' || sub.status === 'approved')
+              )} 
+            />
+            <ProgressItem 
+              label="Supervisor Assignment" 
+              completed={dashboardData.recentSubmissions?.some(sub => 
+                sub.form_code === 'PHDEE02-A' && 
+                (sub.status === 'approved' || sub.final_approval_status === 'approved')
+              )} 
+            />
+            <ProgressItem 
+              label="GEC Formation" 
+              completed={!!gecCommittee} 
+            />
             <ProgressItem label="Course Registration" completed={false} />
             <ProgressItem label="Comprehensive Exam" completed={false} />
           </div>
@@ -547,26 +613,62 @@ const SubmissionCard = ({ submission }) => (
         <p className="text-sm text-gray-600 mt-1">
           Submitted {formatDate(submission.submitted_at)}
         </p>
+        {submission.status_message && (
+          <p className="text-sm text-blue-600 mt-1 font-medium">
+            {submission.status_message}
+          </p>
+        )}
       </div>
-      <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
-        {submission.status}
+      <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.display_status || submission.status)}`}>
+        {submission.display_status || submission.status}
       </span>
     </div>
   </div>
 );
 
 const PendingFormCard = ({ form, onSelect }) => (
-  <div className="p-4 border border-yellow-200 bg-yellow-50 rounded-lg">
-    <div className="flex justify-between items-center">
-      <div>
-        <h4 className="font-medium text-gray-900">{form.form_name}</h4>
+  <div className={`p-4 border rounded-lg ${
+    form.isResubmission 
+      ? 'border-red-200 bg-red-50' 
+      : form.priority === 'high' 
+        ? 'border-yellow-200 bg-yellow-50' 
+        : 'border-blue-200 bg-blue-50'
+  }`}>
+    <div className="flex justify-between items-start">
+      <div className="flex-1">
+        <div className="flex items-center space-x-2">
+          <h4 className="font-medium text-gray-900">{form.form_name}</h4>
+          {form.isResubmission && (
+            <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+              Resubmission Required
+            </span>
+          )}
+          {form.priority === 'high' && !form.isResubmission && (
+            <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+              High Priority
+            </span>
+          )}
+        </div>
         <p className="text-sm text-gray-600 mt-1">{form.description}</p>
+        {form.rejectionReason && (
+          <div className="mt-2 p-2 bg-red-100 border border-red-200 rounded text-sm">
+            <p className="text-red-800 font-medium">Previous rejection reason:</p>
+            <p className="text-red-700">{form.rejectionReason}</p>
+          </div>
+        )}
+        {form.workflow_stage && (
+          <p className="text-xs text-gray-500 mt-2">Stage: {form.workflow_stage.replace('_', ' ')}</p>
+        )}
       </div>
       <button 
         onClick={() => onSelect(form.form_code)}
-        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        className={`px-4 py-2 text-white rounded-lg transition-colors ${
+          form.isResubmission 
+            ? 'bg-red-600 hover:bg-red-700' 
+            : 'bg-blue-600 hover:bg-blue-700'
+        }`}
       >
-        Complete
+        {form.isResubmission ? 'Resubmit' : 'Complete'}
       </button>
     </div>
   </div>
@@ -580,13 +682,18 @@ const SubmissionHistoryCard = ({ submission, onSelect }) => (
         <p className="text-sm text-gray-600 mt-1">
           Submitted {formatDate(submission.submitted_at)}
         </p>
+        {submission.status_message && (
+          <p className="text-sm text-blue-600 mt-1 font-medium">
+            {submission.status_message}
+          </p>
+        )}
         <div className="mt-2 flex items-center space-x-4">
-          <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.status)}`}>
-            {submission.status}
+          <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(submission.display_status || submission.status)}`}>
+            {submission.display_status || submission.status}
           </span>
-          {submission.admin_approval_status && (
+          {submission.dprc_approval_status && (
             <span className="text-xs text-gray-500">
-              Admin: {submission.admin_approval_status}
+              DPRC: {submission.dprc_approval_status}
             </span>
           )}
           {submission.supervisor_approval_status && (
