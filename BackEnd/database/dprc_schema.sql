@@ -146,6 +146,70 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to validate DPRC member count
+CREATE OR REPLACE FUNCTION validate_dprc_member_count()
+RETURNS TRIGGER AS $$
+DECLARE
+    active_member_count INTEGER;
+BEGIN
+    IF TG_OP = 'UPDATE' OR TG_OP = 'DELETE' THEN
+        -- Count active members after the operation
+        SELECT COUNT(*) INTO active_member_count
+        FROM dprc_member_assignments
+        WHERE dprc_committee_id = COALESCE(NEW.dprc_committee_id, OLD.dprc_committee_id)
+        AND is_active = true
+        AND id != COALESCE(NEW.id, OLD.id);
+        
+        -- If this is an update/delete that would result in less than 4 members, prevent it
+        IF (TG_OP = 'UPDATE' AND NEW.is_active = false) OR TG_OP = 'DELETE' THEN
+            IF active_member_count < 4 THEN
+                RAISE EXCEPTION 'DPRC must maintain at least 4 active members';
+            END IF;
+        END IF;
+    END IF;
+    
+    RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to enforce minimum DPRC member count
+CREATE TRIGGER trigger_validate_dprc_member_count
+    BEFORE UPDATE OR DELETE ON dprc_member_assignments
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_dprc_member_count();
+
+-- Function to validate faculty department assignment for DPRC
+CREATE OR REPLACE FUNCTION validate_faculty_department_for_dprc()
+RETURNS TRIGGER AS $$
+DECLARE
+    faculty_dept_id INTEGER;
+    dprc_dept_id INTEGER;
+BEGIN
+    -- Get faculty department
+    SELECT department_id INTO faculty_dept_id
+    FROM faculty
+    WHERE id = NEW.faculty_id AND is_active = true;
+    
+    -- Get DPRC department
+    SELECT department_id INTO dprc_dept_id
+    FROM dprc_committees
+    WHERE id = NEW.dprc_committee_id AND is_active = true;
+    
+    -- Validate faculty belongs to the same department as DPRC
+    IF faculty_dept_id != dprc_dept_id THEN
+        RAISE EXCEPTION 'Faculty member must belong to the same department as the DPRC committee';
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger to enforce department matching for DPRC members
+CREATE TRIGGER trigger_validate_faculty_department_for_dprc
+    BEFORE INSERT OR UPDATE ON dprc_member_assignments
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_faculty_department_for_dprc();
+
 -- Function to get DPRC approval status for a form
 CREATE OR REPLACE FUNCTION get_dprc_approval_status(
     p_form_submission_id INTEGER,
